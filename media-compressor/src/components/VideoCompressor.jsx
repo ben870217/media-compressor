@@ -6,9 +6,9 @@ import {
   Output,
   BlobSource,
   BufferTarget,
-  Mp4InputFormat,
-  MatroskaInputFormat,
-  IsobmffInputFormat,
+  MP4,           // Use this instead of Mp4InputFormat
+  MATROSKA,      // Use this instead of MatroskaInputFormat
+  WEBM,          // Use this instead of IsobmffInputFormat
   Mp4OutputFormat,
   LogLevel
 } from 'mediabunny';
@@ -69,75 +69,65 @@ export default function VideoCompressor({ onFileCleared }) {
 
   // 核心轉碼管線
   const handleCompress = async (bitrateModifier = 1.0) => {
-    if (!videoFile || !calcResult) return;
-    setStatus('processing');
+  if (!videoFile || !calcResult) return;
+  setStatus('processing');
 
-    try {
-      const finalVideoBitrate = Math.round(calcResult.videoBitrate * bitrateModifier);
+  try {
+    const finalVideoBitrate = Math.round(calcResult.videoBitrate * bitrateModifier);
 
-      const blobSource = new BlobSource(videoFile);
+    const input = new Input({
+      source: new BlobSource(videoFile),
+      formats: [MP4, MATROSKA, WEBM]
+    });
 
-      // 🟢 核心修正點：改為傳入「類別本身」而非「new 實例」
-      // 這樣可以繞過部分打包工具造成的 new 實例原型鏈錯位問題
-      const explicitFormats = [
-        Mp4InputFormat,
-        MatroskaInputFormat,
-        IsobmffInputFormat
-      ];
+    const bufferTarget = new BufferTarget();
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: bufferTarget
+    });
 
-      const input = new Input(blobSource, {
-        formats: explicitFormats
-      });
-
-      /* 💡 如果上面依然報錯，請將上面 6 行註解，換成下面這一行最純淨的自動偵測寫法：
-      const input = new Input(blobSource);
-      */
-
-      const bufferTarget = new BufferTarget();
-      const outputFormat = new Mp4OutputFormat();
-      const output = new Output(bufferTarget, outputFormat);
-
-      const conversion = new Conversion({
+    // Use Conversion.init() instead of new Conversion()
+    const conversion = await Conversion.init({
         input: input,
         output: output,
-        log: LogLevel?.Errors || 1
-      });
-
-      await input.readHeaders();
-
-      for (const track of input.tracks) {
-        if (track.type === 'video') {
-          const videoOutputTrack = output.addVideoTrack(track);
-          videoOutputTrack.setCodec('avc');
-          videoOutputTrack.setBitrate(finalVideoBitrate);
-          videoOutputTrack.setSize(calcResult.resolution.width, calcResult.resolution.height);
-
-        } else if (track.type === 'audio') {
-          if (videoMeta.hasAudio && !stripAudio) {
-            const audioOutputTrack = output.addAudioTrack(track);
-            audioOutputTrack.setCodec('aac');
-            audioOutputTrack.setBitrate(calcResult.audioBitrate);
-          }
+        video: {
+            codec: 'avc',
+            bitrate: finalVideoBitrate,
+            width: calcResult.resolution.width,
+            height: calcResult.resolution.height,
+            fit: 'contain' // or 'fill' or 'cover'
+        },
+        audio: videoMeta.hasAudio && !stripAudio ? {
+            codec: 'aac',
+            bitrate: calcResult.audioBitrate
+        } : {
+            discard: true
         }
-      }
+    });
 
-      await conversion.run();
-
-      const resultBlob = new Blob([bufferTarget.buffer], { type: 'video/mp4' });
-      const sizeMB = resultBlob.size / (1024 * 1024);
-      setRealOutputSizeMB(sizeMB);
-      setOutputBlob(resultBlob);
-
-      if (sizeMB > targetSize) {
-        setStatus('overshoot');
-      } else {
-        setStatus('success');
-      }
-    } catch (err) {
-      console.error("轉碼管線執行失敗，詳細原因:", err);
+    if (!conversion.isValid) {
+      console.error('Conversion is invalid:', conversion.discardedTracks);
       setStatus('error');
+      return;
     }
-  };
+
+    await conversion.execute();
+
+    const resultBlob = new Blob([bufferTarget.buffer], { type: 'video/mp4' });
+    const sizeMB = resultBlob.size / (1024 * 1024);
+    setRealOutputSizeMB(sizeMB);
+    setOutputBlob(resultBlob);
+
+    if (sizeMB > targetSize) {
+      setStatus('overshoot');
+    } else {
+      setStatus('success');
+    }
+  } catch (err) {
+    console.error("轉碼管線執行失敗，詳細原因:", err);
+    setStatus('error');
+  }
+};
 
   const handleClear = () => {
     if (outputBlob) URL.revokeObjectURL(outputBlob);
