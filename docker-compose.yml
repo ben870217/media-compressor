@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  web:
+    image: node:26-alpine
+    container_name: media-compressor-dev
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+    # 保持容器在背景運行而不自動啟動任何服務，等待使用者手動進入
+    command: tail -f /dev/null
+    restart: always
