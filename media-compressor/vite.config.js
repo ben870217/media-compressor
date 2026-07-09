@@ -16,5 +16,8 @@ export default defineConfig({
     watch: {
       usePolling: true // 在 Docker/WSL 環境下，確保熱重載（HMR）檔案監聽正常運作
     }
+  },
+  optimizeDeps: {
+    include: ['mediabunny']
   }
 })
