@@ -191,7 +191,6 @@ export default function VideoCompressor({ onFileCleared }) {
               <option value="1080p">1080p (藍光高畫質 - 適合大螢幕)</option>
               <option value="720p">720p (標準高畫質 - 適合行動裝置)</option>
               <option value="480p">480p (標清速傳 - 體積大幅縮小)</option>
-              <option value="360p">360p (極致壓縮 - 適合純語音/長影片)</option>
             </select>
           </div>
 
