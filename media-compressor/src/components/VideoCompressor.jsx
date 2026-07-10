@@ -27,6 +27,7 @@ export default function VideoCompressor({ onFileCleared }) {
   const [calcResult, setCalcResult] = useState(null);
   const [outputBlob, setOutputBlob] = useState(null);
   const [realOutputSizeMB, setRealOutputSizeMB] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState(''); // 新增：預覽影片的 Object URL 狀態
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -102,6 +103,20 @@ export default function VideoCompressor({ onFileCleared }) {
     });
     setCalcResult(result);
   }, [targetSize, stripAudio, videoFile, videoMeta.duration, videoMeta.hasAudio, resolution]);
+
+  // 新增：監聽 outputBlob 變化，自動管理預覽 URL 的生成與釋放（防止記憶體溢漏）
+  useEffect(() => {
+    if (!outputBlob) {
+      setPreviewUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(outputBlob);
+    setPreviewUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [outputBlob]);
 
   const handleCompress = async (bitrateModifier = 1.0) => {
     if (!videoFile || !calcResult) return;
@@ -182,11 +197,10 @@ export default function VideoCompressor({ onFileCleared }) {
   };
 
   const handleClear = () => {
-    if (outputBlob) URL.revokeObjectURL(outputBlob);
     setVideoFile(null);
     setVideoMeta({ duration: 0, hasAudio: false, codec: '', bitrate: '' });
     setCalcResult(null);
-    setOutputBlob(null);
+    setOutputBlob(null); // 這會觸發 useEffect 清除 previewUrl 並 revokeObjectURL
     setStatus('idle');
     if (onFileCleared) onFileCleared();
   };
@@ -300,7 +314,7 @@ export default function VideoCompressor({ onFileCleared }) {
           font-size: 14px !important;
           border: 1px solid #e0e0e0 !important;
           border-radius: 9999px !important;
-          text-align: center !important; /* 修正先前寫錯的屬性 */
+          text-align: center !important;
           background-color: #ffffff !important;
           color: #1d1d1f !important;
           box-sizing: border-box !important;
@@ -471,6 +485,26 @@ export default function VideoCompressor({ onFileCleared }) {
           font-weight: 600;
           margin-bottom: 8px;
         }
+
+        /* 新增：預覽播放器外殼（符合 Apple 劇院純黑/微圓角規範） */
+        .apple-preview-player-wrapper {
+          width: 100%;
+          background-color: #000000;
+          border-radius: 12px;
+          overflow: hidden;
+          margin-bottom: 16px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+
+        .apple-preview-player {
+          width: 100%;
+          max-height: 320px;
+          display: block;
+          background-color: #000000;
+          outline: none;
+        }
       `}</style>
 
       <h2 className="apple-compressor-title">
@@ -484,7 +518,7 @@ export default function VideoCompressor({ onFileCleared }) {
       {videoFile && calcResult && (
         <div className="apple-control-stack">
 
-          {/* 1. 目標檔案大小設定 */}
+          {/* 1. 目報檔案大小設定 */}
           <div className="apple-field-block">
             <label className="apple-field-label">選擇目標容量大小</label>
             <div className="apple-chip-row">
@@ -599,6 +633,14 @@ export default function VideoCompressor({ onFileCleared }) {
         <div className="apple-artifact-card">
           <div className="apple-artifact-status" style={{ color: '#0066cc' }}>⚠️ 轉碼容量溢出</div>
           <p style={{ color: '#1d1d1f', marginBottom: '16px' }}>產出體積 <strong>{realOutputSizeMB.toFixed(2)} MB</strong> 略高於目標 {targetSize}MB。</p>
+
+          {/* 溢出狀態同樣允許使用者先預覽 */}
+          {previewUrl && (
+            <div className="apple-preview-player-wrapper">
+              <video src={previewUrl} controls className="apple-preview-player" />
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '12px' }}>
             <button onClick={() => handleCompress(0.82)} className="apple-btn-main" style={{ height: '38px', fontSize: '14px' }}>
               🔄 以 82% 碼率重壓
@@ -614,6 +656,14 @@ export default function VideoCompressor({ onFileCleared }) {
         <div className="apple-artifact-card">
           <div className="apple-artifact-status" style={{ color: '#0066cc' }}>🎉 轉碼封裝完成</div>
           <p style={{ color: '#1d1d1f', marginBottom: '16px' }}>最終精密大小：<strong>{realOutputSizeMB.toFixed(2)} MB</strong>（完美符合預期範圍）。</p>
+
+          {/* 預覽播放器區塊 */}
+          {previewUrl && (
+            <div className="apple-preview-player-wrapper">
+              <video src={previewUrl} controls className="apple-preview-player" />
+            </div>
+          )}
+
           <button onClick={handleDownload} className="apple-btn-main" style={{ width: '100%' }}>
             💾 儲存轉碼影片至本地
           </button>
