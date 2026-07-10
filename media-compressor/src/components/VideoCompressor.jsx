@@ -16,10 +16,14 @@ import { calculateBitrateAndResolution } from '../utils/bitrateCalculator';
 
 export default function VideoCompressor({ onFileCleared }) {
   const [videoFile, setVideoFile] = useState(null);
-  const [videoMeta, setVideoMeta] = useState({ duration: 0, hasAudio: false });
+  // 🛠️ 擴充元資料：加入原始影片編碼 (codec) 與總碼率 (bitrate)
+  const [videoMeta, setVideoMeta] = useState({ duration: 0, hasAudio: false, codec: '', bitrate: '' });
   const [targetSize, setTargetSize] = useState(10);
   const [stripAudio, setStripAudio] = useState(false);
-  const [resolution, setResolution] = useState('1080p'); // 🛠️ 新增：畫質/解析度設定狀態
+  const [resolution, setResolution] = useState('720p'); // 🛠️ 優化：預設值調整為 720p，避免 1080p 壓太大或自動降過低
+  const [outputCodec, setOutputCodec] = useState('avc'); // 🛠️ 新增：輸出編碼選擇狀態 (預設 avc / h.264)
+  const [bitrateMode, setBitrateMode] = useState('auto'); // 🛠️ 新增：碼率模式選單狀態
+  const [customBitrate, setCustomBitrate] = useState('auto'); // 🛠️ 新增：最終套用的自訂碼率 (kbps)
   const [status, setStatus] = useState('idle');
   const [calcResult, setCalcResult] = useState(null);
   const [outputBlob, setOutputBlob] = useState(null);
@@ -42,15 +46,45 @@ export default function VideoCompressor({ onFileCleared }) {
     video.preload = 'metadata';
     video.src = URL.createObjectURL(file);
 
-    video.onloadedmetadata = () => {
+    video.onloadedmetadata = async () => {
       URL.revokeObjectURL(video.src);
 
-      // 🛠️ 檢查音訊優化：主流瀏覽器 (如 Chrome) 預設不支援 video.audioTracks
-      // 這裡維持原邏輯，但確保在轉碼管線中不論偵測結果為何，只要使用者勾選「移除」，就必定強制 discard。
       const hasAudio = video.audioTracks ? video.audioTracks.length > 0 : true;
-      setVideoMeta({ duration: video.duration, hasAudio });
+
+      // 🛠️ 預估初始總平均碼率 (檔案大小 * 8 / 時長)
+      let estimatedBitrate = '計算中...';
+      if (video.duration > 0) {
+        const totalBitrateKbps = Math.round((file.size * 8) / (video.duration * 1024));
+        estimatedBitrate = `${totalBitrateKbps} kbps`;
+      }
+
+      setVideoMeta({
+        duration: video.duration,
+        hasAudio,
+        codec: '偵測中...',
+        bitrate: estimatedBitrate
+      });
+
       if (!hasAudio) setStripAudio(true);
       setStatus('idle');
+
+      // 🛠️ 異步使用 mediabunny 精準解析原始視訊編碼
+      try {
+        const inputInstance = new Input({
+          source: new BlobSource(file),
+          formats: [MP4, MATROSKA, WEBM]
+        });
+        const videoTrack = await inputInstance.getPrimaryVideoTrack();
+        if (videoTrack) {
+          const rawCodec = videoTrack.codec || videoTrack.codecName || 'AVC / H.264';
+          setVideoMeta(prev => ({ ...prev, codec: rawCodec.toUpperCase() }));
+        } else {
+          setVideoMeta(prev => ({ ...prev, codec: '未知編碼' }));
+        }
+      } catch (err) {
+        console.error("無法精準讀取原始編碼", err);
+        setVideoMeta(prev => ({ ...prev, codec: 'AVC / H.264 (推測)' }));
+      }
     };
 
     video.onerror = () => {
@@ -63,7 +97,6 @@ export default function VideoCompressor({ onFileCleared }) {
   useEffect(() => {
     if (!videoFile || videoMeta.duration === 0) return;
 
-    // 🛠️ 將手動調整的 resolution 傳入計算器
     const result = calculateBitrateAndResolution({
       targetSizeMB: targetSize,
       duration: videoMeta.duration,
@@ -72,7 +105,7 @@ export default function VideoCompressor({ onFileCleared }) {
       userSelectedResolution: resolution
     });
     setCalcResult(result);
-  }, [targetSize, stripAudio, videoFile, videoMeta, resolution]); // 🛠️ 新增 resolution 依賴項目
+  }, [targetSize, stripAudio, videoFile, videoMeta.duration, videoMeta.hasAudio, resolution]);
 
   // 核心轉碼管線
   const handleCompress = async (bitrateModifier = 1.0) => {
@@ -81,7 +114,13 @@ export default function VideoCompressor({ onFileCleared }) {
     setOutputBlob(null); // 開始新壓縮時清除舊檔
 
     try {
-      const finalVideoBitrate = Math.round(calcResult.videoBitrate * bitrateModifier);
+      // 🛠️ 判斷碼率來源：若為 auto 則走演算法推薦碼率，自訂則將 kbps 轉換為 bps 並乘上調整係數
+      let finalVideoBitrate;
+      if (customBitrate === 'auto') {
+        finalVideoBitrate = Math.round(calcResult.videoBitrate * bitrateModifier);
+      } else {
+        finalVideoBitrate = Math.round(Number(customBitrate) * 1024 * bitrateModifier);
+      }
 
       const input = new Input({
         source: new BlobSource(videoFile),
@@ -94,18 +133,16 @@ export default function VideoCompressor({ onFileCleared }) {
         target: bufferTarget
       });
 
-      // Use Conversion.init() instead of new Conversion()
       const conversion = await Conversion.init({
           input: input,
           output: output,
           video: {
-              codec: 'avc',
+              codec: outputCodec, // 🛠️ 動態套用使用者選擇的輸出編碼
               bitrate: finalVideoBitrate,
               width: calcResult.resolution.width,
               height: calcResult.resolution.height,
               fit: 'contain'
           },
-          // 🛠️ 音訊軌移除檢驗：只要使用者勾選 stripAudio，不管原影片判定有沒有聲音，一律強制 discard 確保效果
           audio: !stripAudio ? {
               codec: 'aac',
               bitrate: calcResult.audioBitrate
@@ -138,23 +175,22 @@ export default function VideoCompressor({ onFileCleared }) {
     }
   };
 
-  // 🛠️ 新增：統一的下載函式
   const handleDownload = () => {
     if (!outputBlob) return;
     const url = URL.createObjectURL(outputBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `compressed_${resolution}_${videoFile.name || 'video.mp4'}`;
+    a.download = `compressed_${resolution}_${outputCodec}_${videoFile.name || 'video.mp4'}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url); // 釋放記憶體
+    URL.revokeObjectURL(url);
   };
 
   const handleClear = () => {
     if (outputBlob) URL.revokeObjectURL(outputBlob);
     setVideoFile(null);
-    setVideoMeta({ duration: 0, hasAudio: false });
+    setVideoMeta({ duration: 0, hasAudio: false, codec: '', bitrate: '' });
     setCalcResult(null);
     setOutputBlob(null);
     setStatus('idle');
@@ -180,7 +216,7 @@ export default function VideoCompressor({ onFileCleared }) {
             </div>
           </div>
 
-          {/* 🛠️ 2. 新增：使用者自訂調整畫質 (解析度) */}
+          {/* 2. 畫質限制調整 */}
           <div>
             <label className="block text-sm font-medium text-gray-700">限制最高解析度：</label>
             <select
@@ -194,7 +230,71 @@ export default function VideoCompressor({ onFileCleared }) {
             </select>
           </div>
 
-          {/* 3. 移除音訊控制項 */}
+          {/* 🛠️ 3. 新增：輸出編碼格式選擇與行為描述 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">輸出影片編碼格式 (Codec)：</label>
+            <select
+              value={outputCodec}
+              onChange={(e) => setOutputCodec(e.target.value)}
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md border"
+            >
+              <option value="avc">H.264 / AVC (相容性最高)</option>
+              <option value="hevc">H.265 / HEVC (高壓縮率、適合 Apple 裝置)</option>
+              <option value="vp9">VP9 (Google 格式、高網頁相容性)</option>
+              <option value="av1">AV1 (次世代格式、體積最小)</option>
+            </select>
+            <p className="mt-1.5 text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-200 leading-relaxed">
+              💡 <strong>編碼指南：</strong>
+              {outputCodec === 'avc' && ' 相容性完美。幾乎所有瀏覽器、手機、電視都能直接播放，社群軟體傳輸首選。'}
+              {outputCodec === 'hevc' && ' 相同畫質下比 H.264 縮小近 50% 體積。適合 iPhone/Mac 與高畫質儲存，但部分舊型 Windows 或舊瀏覽器可能無法直接預覽。'}
+              {outputCodec === 'vp9' && ' 由 Google 主導的開放格式，YouTube 核心編碼。壓縮率極佳，在 Chrome/Android 支援度極好。'}
+              {outputCodec === 'av1' && ' 最新免授權編碼，壓縮率最高（體積最小），但轉碼非常吃重 CPU 效能，壓縮時間會拉得較長。'}
+            </p>
+          </div>
+
+          {/* 🛠️ 4. 新增：自訂調整輸出碼率 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">調整輸出影片碼率 (Bitrate)：</label>
+            <div className="flex gap-2 mt-1">
+              <select
+                value={bitrateMode}
+                onChange={(e) => {
+                  const mode = e.target.value;
+                  setBitrateMode(mode);
+                  if (mode !== 'custom') {
+                    setCustomBitrate(mode);
+                  } else {
+                    setCustomBitrate('2000'); // 切換到自訂時給予預設值 2000 kbps
+                  }
+                }}
+                className="block flex-1 pl-3 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md border"
+              >
+                <option value="auto">自動計算 (依目標檔案大小最佳化)</option>
+                <option value="500">500 kbps (超低畫質 - 適合文字速傳)</option>
+                <option value="1000">1000 kbps (1 Mbps - 適合 480p 行動流暢)</option>
+                <option value="2000">2000 kbps (2 Mbps - 適合 720p 標準畫質)</option>
+                <option value="4000">4000 kbps (4 Mbps - 適合 1080p 高清)</option>
+                <option value="8000">8000 kbps (8 Mbps - 超高清高位元率)</option>
+                <option value="custom">🛠️ 自訂輸入指定碼率...</option>
+              </select>
+
+              {bitrateMode === 'custom' && (
+                <div className="flex gap-1 items-center">
+                  <input
+                    type="number"
+                    value={customBitrate === 'auto' ? '2000' : customBitrate}
+                    onChange={(e) => setCustomBitrate(e.target.value)}
+                    className="w-24 px-2 py-1 border rounded text-center text-sm focus:ring-blue-500 focus:border-blue-500"
+                    min="100"
+                    max="50000"
+                  />
+                  <span className="text-sm text-gray-500">kbps</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 5. 移除音訊控制項 */}
           <div className="flex items-center">
             <input type="checkbox" id="stripAudio" checked={stripAudio} disabled={!videoMeta.hasAudio} onChange={(e) => setStripAudio(e.target.checked)} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
             <label htmlFor="stripAudio" className="ml-2 text-sm text-gray-900">
@@ -202,18 +302,28 @@ export default function VideoCompressor({ onFileCleared }) {
             </label>
           </div>
 
-          {/* 4. 預期數據報告面版 */}
-          <div className="bg-gray-50 p-3 rounded text-sm space-y-1">
+          {/* 6. 數據報告面板（同步呈現輸入與輸出規格） */}
+          <div className="bg-gray-50 p-3 rounded text-sm space-y-1.5 border border-gray-100">
             <p className="text-gray-600">⏱️ 影片長度：<span className="font-semibold text-gray-900">{videoMeta.duration.toFixed(1)} 秒</span></p>
+            {/* 🛠️ 顯示使用者輸入影片的資訊 */}
+            <p className="text-gray-600">📝 原始編碼：<span className="font-semibold text-blue-600">{videoMeta.codec || '解析中...'}</span></p>
+            <p className="text-gray-600">📊 原始總碼率：<span className="font-semibold text-blue-600">{videoMeta.bitrate || '計算中...'}</span></p>
+            <hr className="my-1 border-gray-200" />
             <p className="text-gray-600">📐 預計解析度：
               <span className={`font-semibold ${calcResult.isDownscaled ? 'text-amber-600' : 'text-green-600'}`}>
                 {calcResult.resolutionName} {calcResult.isDownscaled && '(已自動降階優化)'}
               </span>
             </p>
             <p className="text-gray-600">📊 預計畫質評級：<span className="font-semibold text-gray-900">{calcResult.qualityRating}</span></p>
+            {/* 🛠️ 顯示預計輸出的碼率 */}
+            <p className="text-gray-600">⚡ 預計視訊碼率：
+              <span className="font-semibold text-purple-600">
+                {customBitrate === 'auto' ? `${Math.round(calcResult.videoBitrate / 1024)} kbps (智慧調配)` : `${customBitrate} kbps (手動鎖定)`}
+              </span>
+            </p>
           </div>
 
-          {/* 5. 動作按鈕 */}
+          {/* 7. 動作按鈕 */}
           <div className="flex gap-4">
             <button onClick={() => handleCompress(1.0)} disabled={status === 'processing'} className="flex-1 bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 disabled:bg-gray-400 font-medium transition">
               {status === 'processing' ? '⚡ 轉碼中...' : '開始壓縮'}
@@ -223,7 +333,7 @@ export default function VideoCompressor({ onFileCleared }) {
         </div>
       )}
 
-      {/* 🛠️ 6. 狀態顯示與「強制下載區域」（不論大小符合與否皆可下載） */}
+      {/* 8. 狀態顯示與強制下載 */}
       {status === 'overshoot' && (
         <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded text-sm text-amber-700 space-y-3">
           <p>⚠️ 碼率暴走！產出大小 <strong>{realOutputSizeMB.toFixed(2)} MB</strong> 高於目標 {targetSize}MB。</p>
@@ -231,7 +341,6 @@ export default function VideoCompressor({ onFileCleared }) {
             <button onClick={() => handleCompress(0.82)} className="bg-amber-600 text-white px-3 py-1.5 rounded text-xs hover:bg-amber-700 font-medium transition">
               🔄 降碼重試 (以 82% 碼率重壓)
             </button>
-            {/* 核心修改：大小不符也允許直接下載 */}
             <button onClick={handleDownload} className="bg-gray-700 text-white px-3 py-1.5 rounded text-xs hover:bg-gray-800 font-medium transition">
               💾 照樣下載此影片
             </button>
