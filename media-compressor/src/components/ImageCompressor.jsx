@@ -12,6 +12,7 @@ export default function ImageCompressor() {
   const [is4KWarning, setIs4KWarning] = useState(false);
   const [compressedBlob, setCompressedBlob] = useState(null);
   const [realOutputSizeMB, setRealOutputSizeMB] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState(''); // 預覽相片的 Object URL 狀態
 
   const workerRef = useRef(null);
 
@@ -91,13 +92,25 @@ export default function ImageCompressor() {
       });
     }, 300); // 300 毫秒防抖
 
-    // 清理機制：如果使用者在 300ms 內又拉了滑桿，前一次的計時器會被取消，重新計時
     return () => clearTimeout(debounceTimer);
   }, [targetSize, format, imageFile]);
 
+  // 監聽 compressedBlob 變化，自動管理預覽 URL 的生成與釋放（防止記憶體溢漏）
+  useEffect(() => {
+    if (!compressedBlob) {
+      setPreviewUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(compressedBlob);
+    setPreviewUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [compressedBlob]);
+
   // 4. 下載完成後的記憶體釋放回呼
   const handleDownloadComplete = () => {
-    // 配合規格書安全防禦：下載完畢後清空產出的 Blob 狀態
     setCompressedBlob(null);
     setStatus('idle');
   };
@@ -119,81 +132,419 @@ export default function ImageCompressor() {
   const currentExt = format === 'image/jpeg' ? '.jpg' : '.webp';
 
   return (
-    <div className="p-6 max-w-xl mx-auto bg-white rounded-xl shadow-md space-y-4">
-      <h2 className="text-xl font-bold">📸 照片壓縮工具 (OffscreenCanvas 加速)</h2>
+    <div className="apple-compressor-workspace">
+      <style>{`
+        .apple-compressor-workspace {
+          width: 100%;
+          max-width: 580px;
+          margin: 0 auto;
+          text-align: left;
+        }
+
+        .apple-compressor-title {
+          font-family: "SF Pro Display", -apple-system, sans-serif;
+          font-size: 24px;
+          font-weight: 600;
+          line-height: 1.2;
+          color: #1d1d1f;
+          margin-bottom: 24px;
+          text-align: center;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+
+        /* 檔案卡片外觀 */
+        .apple-file-card {
+          background-color: #ffffff;
+          border: 1px dashed #e0e0e0;
+          border-radius: 18px;
+          padding: 32px 20px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          transition: border-color 0.2s, background-color 0.2s;
+        }
+
+        .apple-file-card:hover {
+          background-color: #f5f5f7;
+          border-color: #7a7a7a;
+        }
+
+        .apple-file-card input[type="file"] {
+          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-size: 14px;
+          color: #1d1d1f;
+          cursor: pointer;
+        }
+
+        /* 核心配置排版 */
+        .apple-control-stack {
+          margin-top: 32px;
+          border-top: 1px solid #e0e0e0;
+          padding-top: 24px;
+        }
+
+        .apple-field-block {
+          margin-bottom: 24px;
+        }
+
+        .apple-field-label {
+          display: block;
+          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-size: 14px;
+          font-weight: 600;
+          color: #1d1d1f;
+          margin-bottom: 10px;
+          letter-spacing: -0.224px;
+        }
+
+        /* 橫列滑桿與控制項對齊 */
+        .apple-slider-row {
+          display: flex;
+          flex-direction: row;
+          gap: 12px;
+          align-items: center;
+        }
+
+        /* 🛡️ 阻斷全域污染：強制重置 Range Slider 軌道外觀 */
+        .apple-main-gallery input.apple-range-slider {
+          -webkit-appearance: none !important;
+          appearance: none !important;
+          flex: 1 !important;
+          width: auto !important;
+          height: 6px !important; /* 精緻的 Apple 軌道細線條 */
+          background: #000000 !important; /* 穩定的純黑底色 */
+          border: none !important; /* 擊碎全域邊框 */
+          padding: 0 !important; /* 擊碎全域內距造成的肥大泡泡 */
+          margin: 0 !important;
+          border-radius: 9999px !important;
+          outline: none !important;
+          box-shadow: none !important;
+          cursor: pointer !important;
+        }
+
+        /* 🛡️ 阻斷全域污染：控制 Webkit 滑塊按鈕外觀 */
+        .apple-range-slider::-webkit-slider-thumb {
+          -webkit-appearance: none !important;
+          appearance: none !important;
+          width: 22px !important;
+          height: 22px !important;
+          border-radius: 50% !important;
+          background: #ffffff !important;
+          border: 0.5px solid rgba(0, 0, 0, 0.2) !important;
+          box-shadow: 0px 2px 7px rgba(0, 0, 0, 0.3) !important; /* 增強立體投影 */
+          cursor: pointer !important;
+          transition: transform 0.1s ease !important;
+          margin-top: 0px !important; /* 完美水平置中 */
+        }
+
+        .apple-range-slider::-webkit-slider-thumb:active {
+          transform: scale(1.15) !important;
+        }
+
+        /* 控制 Firefox 滑塊（防禦性加固） */
+        .apple-range-slider::-moz-range-thumb {
+          width: 22px !important;
+          height: 22px !important;
+          border-radius: 50% !important;
+          background: #ffffff !important;
+          border: 0.5px solid rgba(0, 0, 0, 0.2) !important;
+          box-shadow: 0px 2px 7px rgba(0, 0, 0, 0.3) !important;
+          cursor: pointer !important;
+          transition: transform 0.1s ease !important;
+        }
+
+        /* 精確限縮膠囊型指定輸入框 */
+        .apple-main-gallery input.apple-input-inline-capsule {
+          width: 80px !important;
+          max-width: 80px !important;
+          height: 30px !important;
+          padding: 0 8px !important;
+          font-size: 14px !important;
+          border: 1px solid #e0e0e0 !important;
+          border-radius: 9999px !important;
+          text-align: center !important;
+          background-color: #ffffff !important;
+          color: #1d1d1f !important;
+          box-sizing: border-box !important;
+          margin: 0 !important;
+          display: inline-block !important;
+        }
+
+        .apple-input-inline-capsule:focus {
+          border-color: #0071e3 !important;
+          outline: none !important;
+          box-shadow: 0 0 0 1px #0071e3 !important;
+        }
+
+        .apple-unit-text {
+          font-size: 14px;
+          color: #7a7a7a;
+          font-weight: 500;
+        }
+
+        /* 標準下拉選單樣式 */
+        .apple-select-element {
+          width: 100%;
+          height: 42px;
+          padding: 0 12px;
+          font-size: 15px;
+          font-family: "SF Pro Text", -apple-system, sans-serif;
+          border: 1px solid #e0e0e0;
+          border-radius: 8px;
+          background-color: #ffffff;
+          color: #1d1d1f;
+          box-sizing: border-box;
+          letter-spacing: -0.224px;
+        }
+
+        .apple-select-element:focus {
+          border-color: #0071e3;
+          outline: none;
+        }
+
+        /* 溫馨提示與警告橫幅 */
+        .apple-warning-banner {
+          margin-top: 16px;
+          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-size: 14px;
+          line-height: 1.45;
+          color: #b78103;
+          background-color: #fffbeb;
+          border: 1px solid #fde68a;
+          padding: 12px 16px;
+          border-radius: 8px;
+        }
+
+        /* 數據清單儀表板 */
+        .apple-report-panel {
+          background-color: #f5f5f7;
+          border-radius: 12px;
+          padding: 16px 20px;
+          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-size: 14px;
+          color: #1d1d1f;
+        }
+
+        .apple-report-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 6px 0;
+        }
+
+        .apple-report-label {
+          color: #7a7a7a;
+        }
+
+        .apple-report-value {
+          font-weight: 600;
+          font-variant-numeric: tabular-nums;
+        }
+
+        @keyframes applePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+
+        .pulsing-blue {
+          color: #0066cc;
+          animation: applePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        .apple-report-value.green {
+          color: #31a24c;
+        }
+
+        .apple-report-divider {
+          border: 0;
+          border-top: 1px solid #e0e0e0;
+          margin: 10px 0;
+        }
+
+        /* 動作按鈕集群 */
+        .apple-action-cluster {
+          display: flex;
+          gap: 12px;
+          margin-top: 28px;
+        }
+
+        .apple-btn-secondary {
+          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-size: 16px;
+          font-weight: 500;
+          color: #0066cc;
+          background-color: transparent;
+          border: 1px solid #0066cc;
+          border-radius: 9999px;
+          padding: 0 24px;
+          height: 44px;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .apple-btn-secondary:hover { background-color: rgba(0, 102, 204, 0.04); }
+        .apple-btn-secondary:active { transform: scale(0.95); }
+
+        /* 成果實體卡片 */
+        .apple-artifact-card {
+          background-color: #ffffff;
+          border: 1px solid #e0e0e0;
+          border-radius: 14px;
+          padding: 24px;
+          margin-top: 28px;
+          box-shadow: rgba(0, 0, 0, 0.22) 3px 5px 30px 0px;
+          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-size: 14px;
+        }
+
+        .apple-artifact-status {
+          font-size: 16px;
+          font-weight: 600;
+          margin-bottom: 8px;
+        }
+
+        /* 預覽相片外殼與樣式 */
+        .apple-preview-image-wrapper {
+          width: 100%;
+          background-color: #000000;
+          border-radius: 12px;
+          overflow: hidden;
+          margin-bottom: 16px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+        }
+
+        .apple-preview-image {
+          width: 100%;
+          max-height: 320px;
+          object-fit: contain;
+          display: block;
+          background-color: #000000;
+        }
+      `}</style>
+
+      <h2 className="apple-compressor-title">
+        <span>📸</span> 相片硬體加速壓縮
+      </h2>
 
       {/* 檔案選取 */}
-      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} className="block w-full text-sm text-gray-500" />
+      <div className="apple-file-card">
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} />
+      </div>
 
-      {/* 4K 溫馨警告橫幅 */}
+      {/* 4K 尺寸警告橫幅 */}
       {is4KWarning && (
-        <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded text-xs text-amber-700">
-          ⚠️ 提示：偵測到此照片為 4K 或超大尺寸 ({imageInfo.width}x{imageInfo.height})。背景運算編碼時間可能會拉長，請拉動滑桿後稍候片刻。
+        <div className="apple-warning-banner">
+          ⚠️ <strong>超大尺寸提示：</strong> 偵測到此照片為 4K 或超大尺寸 ({imageInfo.width} × {imageInfo.height})。背景 OffscreenCanvas 二分法預壓處理時間可能會拉長，請拉動控制項後稍候片刻。
         </div>
       )}
 
       {imageFile && (
-        <div className="space-y-4 border-t pt-4">
-          {/* 格式選擇 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">輸出格式：</label>
-            <select value={format} onChange={(e) => setFormat(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 border rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm">
+        <div className="apple-control-stack">
+          {/* 1. 格式選擇 */}
+          <div className="apple-field-block">
+            <label className="apple-field-label">選擇輸出相片格式</label>
+            <select value={format} onChange={(e) => setFormat(e.target.value)} className="apple-select-element">
               <option value="image/jpeg">JPEG (相容性最高)</option>
-              <option value="image/webp">WebP (壓縮率極佳)</option>
+              <option value="image/webp">WebP (壓縮率極佳 - 適合網頁最佳化)</option>
             </select>
           </div>
 
-          {/* 目標大小滑桿調整 */}
-          <div>
-            <div className="flex justify-between text-sm font-medium text-gray-700">
-              <label>預期最大檔案大小：</label>
-              <span className="text-blue-600 font-bold">{targetSize} MB</span>
+          {/* 2. 目標大小滑桿調整 */}
+          <div className="apple-field-block">
+            <label className="apple-field-label">預期最大檔案大小</label>
+            <div className="apple-slider-row">
+              <input
+                type="range"
+                min="0.1"
+                max={Math.max(2, Math.ceil(imageInfo.originalSizeMB)).toString()}
+                step="0.1"
+                value={targetSize}
+                onChange={(e) => setTargetSize(Number(e.target.value))}
+                className="apple-range-slider"
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="number"
+                  value={targetSize}
+                  onChange={(e) => setTargetSize(Number(e.target.value))}
+                  className="apple-input-inline-capsule"
+                  step="0.1"
+                  min="0.1"
+                />
+                <span className="apple-unit-text">MB</span>
+              </div>
             </div>
-            <input
-              type="range"
-              min="0.1"
-              max={Math.max(2, Math.ceil(imageInfo.originalSizeMB)).toString()}
-              step="0.1"
-              value={targetSize}
-              onChange={(e) => setTargetSize(Number(e.target.value))}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2"
-            />
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>0.1 MB</span>
-              <span>原始大小: {imageInfo.originalSizeMB.toFixed(2)} MB</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }} className="apple-unit-text">
+              <span>極限值: 0.1 MB</span>
+              <span>原始體積: {imageInfo.originalSizeMB.toFixed(2)} MB</span>
             </div>
           </div>
 
-          {/* 狀態即時看板 */}
-          <div className="bg-gray-50 p-3 rounded text-sm space-y-1">
-            <p>📐 原始尺寸：<span className="font-semibold">{imageInfo.width} x {imageInfo.height} 像素</span></p>
-            <p>⏳ 當前狀態：
-              <span className={`font-semibold ${status === 'calculating' ? 'text-blue-500 animate-pulse' : 'text-gray-700'}`}>
+          {/* 3. 數據與狀態即時看板 */}
+          <div className="apple-report-panel">
+            <div className="apple-report-row">
+              <span className="apple-report-label">📐 原始解析度</span>
+              <span className="apple-report-value">{imageInfo.width} × {imageInfo.height} 像素</span>
+            </div>
+            <div className="apple-report-row">
+              <span className="apple-report-label">⏳ 運算狀態</span>
+              <span className={`apple-report-value ${status === 'calculating' ? 'pulsing-blue' : ''}`}>
                 {status === 'calculating' && '🔄 背景二分法預壓中...'}
                 {status === 'success' && '✅ 計算完畢'}
                 {status === 'idle' && '待命'}
                 {status === 'error' && '❌ 壓縮失敗'}
               </span>
-            </p>
+            </div>
             {status === 'success' && (
-              <p>📊 預計產出大小：<span className="text-green-600 font-bold">{realOutputSizeMB.toFixed(2)} MB</span></p>
+              <>
+                <hr className="apple-report-divider" />
+                <div className="apple-report-row">
+                  <span className="apple-report-label">📊 預計產出大小</span>
+                  <span className="apple-report-value green">{realOutputSizeMB.toFixed(2)} MB</span>
+                </div>
+              </>
             )}
           </div>
 
-          {/* 整合分離式下載元件 */}
+          {/* 4. 整合分離式下載元件與成果工藝品卡片 */}
           {status === 'success' && compressedBlob && (
-            <SeparatedDownload
-              blob={compressedBlob}
-              defaultName={suggestedFilename}
-              extension={currentExt}
-              onDownloadComplete={handleDownloadComplete}
-            />
+            <div className="apple-artifact-card">
+              <div className="apple-artifact-status" style={{ color: '#0066cc' }}>🎉 影像優化封裝完成</div>
+              <p style={{ color: '#1d1d1f', marginBottom: '16px' }}>
+                已精密調校壓縮至目標範圍內（產出體積：<strong>{realOutputSizeMB.toFixed(2)} MB</strong>）。
+              </p>
+
+              {/* 預覽壓縮後的照片 */}
+              {previewUrl && (
+                <div className="apple-preview-image-wrapper">
+                  <img src={previewUrl} alt="Compressed preview" className="apple-preview-image" />
+                </div>
+              )}
+
+              <SeparatedDownload
+                blob={compressedBlob}
+                defaultName={suggestedFilename}
+                extension={currentExt}
+                onDownloadComplete={handleDownloadComplete}
+              />
+            </div>
           )}
 
-          {/* 手動清除重置按鈕 */}
-          <button onClick={handleClear} className="w-full bg-gray-100 text-gray-700 py-2 rounded text-sm font-medium hover:bg-gray-200 transition">
-            清除並重置
-          </button>
+          {/* 5. 手動清除重置按鈕 */}
+          <div className="apple-action-cluster">
+            <button onClick={handleClear} className="apple-btn-secondary" style={{ width: '100%' }}>
+              清除並重置面板
+            </button>
+          </div>
         </div>
       )}
     </div>
