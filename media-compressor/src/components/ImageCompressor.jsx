@@ -12,7 +12,8 @@ export default function ImageCompressor() {
   const [is4KWarning, setIs4KWarning] = useState(false);
   const [compressedBlob, setCompressedBlob] = useState(null);
   const [realOutputSizeMB, setRealOutputSizeMB] = useState(0);
-  const [previewUrl, setPreviewUrl] = useState(''); // 預覽相片的 Object URL 狀態
+  const [previewUrl, setPreviewUrl] = useState(''); // 壓縮後的預覽 URL
+  const [originalPreviewUrl, setOriginalPreviewUrl] = useState(''); // 新增：原始相片的預覽 URL
 
   const workerRef = useRef(null);
 
@@ -23,7 +24,6 @@ export default function ImageCompressor() {
       { type: 'module' }
     );
 
-    // 監聽來自 Worker 的計算結果
     workerRef.current.onmessage = (e) => {
       const { status, finalSize, blob, error } = e.data;
       if (status === 'success') {
@@ -37,7 +37,6 @@ export default function ImageCompressor() {
     };
 
     return () => {
-      // 組件拆卸時立刻關閉執行緒，絕不殘留記憶體
       workerRef.current.terminate();
     };
   }, []);
@@ -57,7 +56,6 @@ export default function ImageCompressor() {
     setIs4KWarning(false);
     setCompressedBlob(null);
 
-    // 在主執行緒快取讀取寬高以觸發 4K 警告
     const img = new Image();
     img.src = URL.createObjectURL(file);
     img.onload = () => {
@@ -67,35 +65,33 @@ export default function ImageCompressor() {
         originalSizeMB: file.size / (1024 * 1024)
       });
 
-      // 4K 定義：寬或高大於 3840，或總像素大於 800 萬
       if (img.width > 3840 || img.height > 2160 || (img.width * img.height) > 8000000) {
         setIs4KWarning(true);
       }
-      URL.revokeObjectURL(img.src); // 讀完立刻釋放暫時 URL
+      URL.revokeObjectURL(img.src);
       setStatus('idle');
     };
   };
 
-  // 3. 智慧防抖（Debounce）核心：當目標大小或格式改變時，延遲 300ms 才送進 Worker
+  // 3. 智慧防抖（Debounce）核心
   useEffect(() => {
     if (!imageFile) return;
 
     setStatus('calculating');
 
     const debounceTimer = setTimeout(() => {
-      // 發送訊息給背景 Worker 開始二分法虛擬預壓
       workerRef.current.postMessage({
         type: 'START_PRE_COMPRESSION',
         file: imageFile,
         targetSizeMB: targetSize,
         format: format
       });
-    }, 300); // 300 毫秒防抖
+    }, 300);
 
     return () => clearTimeout(debounceTimer);
   }, [targetSize, format, imageFile]);
 
-  // 監聽 compressedBlob 變化，自動管理預覽 URL 的生成與釋放（防止記憶體溢漏）
+  // 監聽 compressedBlob 變化，自動管理壓縮後預覽 URL
   useEffect(() => {
     if (!compressedBlob) {
       setPreviewUrl('');
@@ -108,6 +104,20 @@ export default function ImageCompressor() {
       URL.revokeObjectURL(url);
     };
   }, [compressedBlob]);
+
+  // 新增：監聽 imageFile 變化，自動管理原始相片預覽 URL 的生命週期
+  useEffect(() => {
+    if (!imageFile) {
+      setOriginalPreviewUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setOriginalPreviewUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [imageFile]);
 
   // 4. 下載完成後的記憶體釋放回呼
   const handleDownloadComplete = () => {
@@ -125,7 +135,6 @@ export default function ImageCompressor() {
     setStatus('idle');
   };
 
-  // 算出動態建議檔名
   const suggestedFilename = imageFile
     ? `${imageFile.name.substring(0, imageFile.name.lastIndexOf('.'))}_compressed`
     : '';
@@ -208,16 +217,16 @@ export default function ImageCompressor() {
           align-items: center;
         }
 
-        /* 🛡️ 阻斷全域污染：強制重置 Range Slider 軌道外觀 */
+        /* 阻斷全域污染：強制重置 Range Slider 軌道外觀 */
         .apple-main-gallery input.apple-range-slider {
           -webkit-appearance: none !important;
           appearance: none !important;
           flex: 1 !important;
           width: auto !important;
-          height: 6px !important; /* 精緻的 Apple 軌道細線條 */
-          background: #000000 !important; /* 穩定的純黑底色 */
-          border: none !important; /* 擊碎全域邊框 */
-          padding: 0 !important; /* 擊碎全域內距造成的肥大泡泡 */
+          height: 6px !important;
+          background: #000000 !important;
+          border: none !important;
+          padding: 0 !important;
           margin: 0 !important;
           border-radius: 9999px !important;
           outline: none !important;
@@ -225,7 +234,7 @@ export default function ImageCompressor() {
           cursor: pointer !important;
         }
 
-        /* 🛡️ 阻斷全域污染：控制 Webkit 滑塊按鈕外觀 */
+        /* 阻斷全域污染：控制 Webkit 滑塊按鈕外觀 */
         .apple-range-slider::-webkit-slider-thumb {
           -webkit-appearance: none !important;
           appearance: none !important;
@@ -234,17 +243,16 @@ export default function ImageCompressor() {
           border-radius: 50% !important;
           background: #ffffff !important;
           border: 0.5px solid rgba(0, 0, 0, 0.2) !important;
-          box-shadow: 0px 2px 7px rgba(0, 0, 0, 0.3) !important; /* 增強立體投影 */
+          box-shadow: 0px 2px 7px rgba(0, 0, 0, 0.3) !important;
           cursor: pointer !important;
           transition: transform 0.1s ease !important;
-          margin-top: 0px !important; /* 完美水平置中 */
+          margin-top: 0px !important;
         }
 
         .apple-range-slider::-webkit-slider-thumb:active {
           transform: scale(1.15) !important;
         }
 
-        /* 控制 Firefox 滑塊（防禦性加固） */
         .apple-range-slider::-moz-range-thumb {
           width: 22px !important;
           height: 22px !important;
@@ -449,6 +457,17 @@ export default function ImageCompressor() {
 
       {imageFile && (
         <div className="apple-control-stack">
+
+          {/* 新增項目：原始相片縮圖預覽 */}
+          {originalPreviewUrl && (
+            <div className="apple-field-block">
+              <label className="apple-field-label">🖼️ 原始照片預覽</label>
+              <div className="apple-preview-image-wrapper">
+                <img src={originalPreviewUrl} alt="Original preview" className="apple-preview-image" />
+              </div>
+            </div>
+          )}
+
           {/* 1. 格式選擇 */}
           <div className="apple-field-block">
             <label className="apple-field-label">選擇輸出相片格式</label>

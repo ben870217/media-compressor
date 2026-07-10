@@ -27,7 +27,8 @@ export default function VideoCompressor({ onFileCleared }) {
   const [calcResult, setCalcResult] = useState(null);
   const [outputBlob, setOutputBlob] = useState(null);
   const [realOutputSizeMB, setRealOutputSizeMB] = useState(0);
-  const [previewUrl, setPreviewUrl] = useState(''); // 新增：預覽影片的 Object URL 狀態
+  const [previewUrl, setPreviewUrl] = useState(''); // 壓縮後的預覽 URL
+  const [originalPreviewUrl, setOriginalPreviewUrl] = useState(''); // 新增：原始影片的預覽 URL
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -104,7 +105,7 @@ export default function VideoCompressor({ onFileCleared }) {
     setCalcResult(result);
   }, [targetSize, stripAudio, videoFile, videoMeta.duration, videoMeta.hasAudio, resolution]);
 
-  // 新增：監聽 outputBlob 變化，自動管理預覽 URL 的生成與釋放（防止記憶體溢漏）
+  // 監聽 outputBlob 變化，自動管理壓縮後預覽 URL
   useEffect(() => {
     if (!outputBlob) {
       setPreviewUrl('');
@@ -117,6 +118,20 @@ export default function VideoCompressor({ onFileCleared }) {
       URL.revokeObjectURL(url);
     };
   }, [outputBlob]);
+
+  // 新增：監聽 videoFile 變化，自動管理原始影片預覽 URL 的生命週期
+  useEffect(() => {
+    if (!videoFile) {
+      setOriginalPreviewUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(videoFile);
+    setOriginalPreviewUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [videoFile]);
 
   const handleCompress = async (bitrateModifier = 1.0) => {
     if (!videoFile || !calcResult) return;
@@ -200,7 +215,7 @@ export default function VideoCompressor({ onFileCleared }) {
     setVideoFile(null);
     setVideoMeta({ duration: 0, hasAudio: false, codec: '', bitrate: '' });
     setCalcResult(null);
-    setOutputBlob(null); // 這會觸發 useEffect 清除 previewUrl 並 revokeObjectURL
+    setOutputBlob(null);
     setStatus('idle');
     if (onFileCleared) onFileCleared();
   };
@@ -280,7 +295,7 @@ export default function VideoCompressor({ onFileCleared }) {
           flex-direction: row;
           flex-wrap: wrap;
           gap: 10px;
-          align-items: center; /* 關鍵：確保行內物件絕對置中對齊 */
+          align-items: center;
         }
 
         .apple-option-chip {
@@ -305,7 +320,7 @@ export default function VideoCompressor({ onFileCleared }) {
           border-color: #0066cc;
         }
 
-        /* 🚨 擊碎全域拉長跑版的阻斷點：精確限縮全域 input 影響 */
+        /* 精確限縮全域 input 影響 */
         .apple-main-gallery input.apple-input-inline-capsule {
           width: 80px !important;
           max-width: 80px !important;
@@ -318,7 +333,7 @@ export default function VideoCompressor({ onFileCleared }) {
           background-color: #ffffff !important;
           color: #1d1d1f !important;
           box-sizing: border-box !important;
-          margin: 0 !important; /* 清除不必要的區塊推擠 */
+          margin: 0 !important;
           display: inline-block !important;
         }
 
@@ -342,7 +357,7 @@ export default function VideoCompressor({ onFileCleared }) {
           font-size: 15px;
           font-family: "SF Pro Text", -apple-system, sans-serif;
           border: 1px solid #e0e0e0;
-          border-radius: 8px; /* 依照 store-utility-card 適配 */
+          border-radius: 8px;
           background-color: #ffffff;
           color: #1d1d1f;
           box-sizing: border-box;
@@ -468,7 +483,7 @@ export default function VideoCompressor({ onFileCleared }) {
         .apple-btn-secondary:hover { background-color: rgba(0, 102, 204, 0.04); }
         .apple-btn-secondary:active { transform: scale(0.95); }
 
-        /* 成果實體卡片（唯一下落落影外觀） */
+        /* 成果實體卡片 */
         .apple-artifact-card {
           background-color: #ffffff;
           border: 1px solid #e0e0e0;
@@ -486,7 +501,7 @@ export default function VideoCompressor({ onFileCleared }) {
           margin-bottom: 8px;
         }
 
-        /* 新增：預覽播放器外殼（符合 Apple 劇院純黑/微圓角規範） */
+        /* 預覽播放器外殼（符合 Apple 劇院純黑/微圓角規範） */
         .apple-preview-player-wrapper {
           width: 100%;
           background-color: #000000;
@@ -496,6 +511,7 @@ export default function VideoCompressor({ onFileCleared }) {
           display: flex;
           justify-content: center;
           align-items: center;
+          box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
         }
 
         .apple-preview-player {
@@ -518,7 +534,17 @@ export default function VideoCompressor({ onFileCleared }) {
       {videoFile && calcResult && (
         <div className="apple-control-stack">
 
-          {/* 1. 目報檔案大小設定 */}
+          {/* 新增項目：原始影片播放預覽 */}
+          {originalPreviewUrl && (
+            <div className="apple-field-block">
+              <label className="apple-field-label">🎞️ 原始影片預覽</label>
+              <div className="apple-preview-player-wrapper">
+                <video src={originalPreviewUrl} controls className="apple-preview-player" />
+              </div>
+            </div>
+          )}
+
+          {/* 1. 目標檔案大小設定 */}
           <div className="apple-field-block">
             <label className="apple-field-label">選擇目標容量大小</label>
             <div className="apple-chip-row">
@@ -634,7 +660,6 @@ export default function VideoCompressor({ onFileCleared }) {
           <div className="apple-artifact-status" style={{ color: '#0066cc' }}>⚠️ 轉碼容量溢出</div>
           <p style={{ color: '#1d1d1f', marginBottom: '16px' }}>產出體積 <strong>{realOutputSizeMB.toFixed(2)} MB</strong> 略高於目標 {targetSize}MB。</p>
 
-          {/* 溢出狀態同樣允許使用者先預覽 */}
           {previewUrl && (
             <div className="apple-preview-player-wrapper">
               <video src={previewUrl} controls className="apple-preview-player" />
@@ -657,7 +682,6 @@ export default function VideoCompressor({ onFileCleared }) {
           <div className="apple-artifact-status" style={{ color: '#0066cc' }}>🎉 轉碼封裝完成</div>
           <p style={{ color: '#1d1d1f', marginBottom: '16px' }}>最終精密大小：<strong>{realOutputSizeMB.toFixed(2)} MB</strong>（完美符合預期範圍）。</p>
 
-          {/* 預覽播放器區塊 */}
           {previewUrl && (
             <div className="apple-preview-player-wrapper">
               <video src={previewUrl} controls className="apple-preview-player" />
