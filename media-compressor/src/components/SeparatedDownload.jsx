@@ -1,6 +1,5 @@
 // src/components/SeparatedDownload.jsx
-import React, { useState, useEffect } from 'react';
-// 🔴 引入剛寫好的安全過濾器
+import { useState, useEffect } from 'react';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 export default function SeparatedDownload({ blob, defaultName, extension, onDownloadComplete }) {
@@ -8,15 +7,12 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
 
   useEffect(() => {
     if (defaultName) {
-      // 初始化時，也先幫建議檔名做一次安全檢查
       setFilename(sanitizeFilename(defaultName));
     }
   }, [defaultName]);
 
   const handleFilenameChange = (e) => {
     const inputValue = e.target.value;
-
-    // 🔴 直接調用獨立的過濾器，即時清洗輸入內容
     const sanitizedValue = sanitizeFilename(inputValue);
     setFilename(sanitizedValue);
   };
@@ -24,7 +20,6 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
   const handleDownload = () => {
     if (!blob || !filename) return;
 
-    // 如果使用者透過特殊手段清空了名稱，給予安全替代檔名
     const safeFilename = filename.trim() || 'unnamed_file';
     const fullFilename = `${safeFilename}${extension}`;
 
@@ -50,7 +45,7 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
     <div className="apple-download-panel">
       <style>{`
         .apple-download-panel {
-          background-color: rgba(49, 162, 76, 0.06);
+          background-color: var(--apple-download-panel-bg);
           border: 1px solid rgba(49, 162, 76, 0.2);
           border-radius: 14px;
           padding: 16px;
@@ -61,7 +56,7 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
           box-sizing: border-box;
           width: 100%;
           text-align: left;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-family: var(--apple-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
         }
 
         .apple-download-label {
@@ -75,9 +70,9 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
         .apple-download-input-container {
           display: flex;
           align-items: stretch;
-          border: 1px solid #d2d2d7;
+          border: 1px solid var(--apple-hairline);
           border-radius: 9999px;
-          background-color: #ffffff;
+          background-color: var(--apple-canvas);
           overflow: hidden;
           box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
           box-sizing: border-box;
@@ -100,7 +95,7 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
           font-size: 14px !important;
           border-radius: 9999px 0 0 9999px !important;
           box-sizing: border-box !important;
-          color: #1d1d1f !important;
+          color: var(--apple-ink) !important;
         }
 
         .apple-download-input:focus {
@@ -111,24 +106,24 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
           display: flex;
           align-items: center;
           padding: 0 16px;
-          background-color: #f5f5f7;
-          color: #7a7a7a;
+          background-color: var(--apple-canvas-parchment);
+          color: var(--apple-ink-secondary);
           font-size: 13px;
           font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-          border-left: 1px solid #d2d2d7;
+          border-left: 1px solid var(--apple-hairline);
           user-select: none;
         }
 
         .apple-download-hint {
           font-size: 11px;
-          color: #7a7a7a;
+          color: var(--apple-ink-secondary);
           margin: 0;
           line-height: 1.4;
         }
 
         .apple-download-button {
           width: 100%;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-family: var(--apple-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
           font-size: 15px;
           font-weight: 500;
           color: #ffffff !important;
@@ -173,7 +168,7 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
       </div>
 
       <p className="apple-download-hint">
-        * 系統已自動過濾不合法字元 <code>/ \ : * ? " &lt; &gt; |</code>，且副檔名已被鎖定保護。
+        * 系統已自動過濾不合法字元 <code>/ \ : * ? &quot; &lt; &gt; |</code>，且副檔名已被鎖定保護。
       </p>
 
       <button
@@ -185,4 +180,3 @@ export default function SeparatedDownload({ blob, defaultName, extension, onDown
     </div>
   );
 }
-

@@ -34,7 +34,7 @@ export default function CompatibilityBanner() {
           position: sticky;
           top: 0;
           z-index: 250;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-family: var(--apple-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
         }
 
         .apple-compat-container {

@@ -1,8 +1,8 @@
 // src/components/ImageCompressor.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import SeparatedDownload from './SeparatedDownload';
 
-export default function ImageCompressor() {
+export default function ImageCompressor({ onCompressComplete }) {
   const [imageFile, setImageFile] = useState(null);
   const [imageInfo, setImageInfo] = useState({ width: 0, height: 0, originalSizeMB: 0 });
   const [targetSize, setTargetSize] = useState(1); // 預設 1MB
@@ -12,8 +12,8 @@ export default function ImageCompressor() {
   const [is4KWarning, setIs4KWarning] = useState(false);
   const [compressedBlob, setCompressedBlob] = useState(null);
   const [realOutputSizeMB, setRealOutputSizeMB] = useState(0);
-  const [previewUrl, setPreviewUrl] = useState(''); // 壓縮後的預覽 URL
-  const [originalPreviewUrl, setOriginalPreviewUrl] = useState(''); // 新增：原始相片的預覽 URL
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [originalPreviewUrl, setOriginalPreviewUrl] = useState('');
 
   const workerRef = useRef(null);
 
@@ -105,7 +105,7 @@ export default function ImageCompressor() {
     };
   }, [compressedBlob]);
 
-  // 新增：監聽 imageFile 變化，自動管理原始相片預覽 URL 的生命週期
+  // 監聽 imageFile 變化，自動管理原始相片預覽 URL 的生命週期
   useEffect(() => {
     if (!imageFile) {
       setOriginalPreviewUrl('');
@@ -119,8 +119,27 @@ export default function ImageCompressor() {
     };
   }, [imageFile]);
 
-  // 4. 下載完成後的記憶體釋放回呼
+  // 4. 下載完成後的記憶體釋放回呼（同時觸發歷程紀錄）
   const handleDownloadComplete = () => {
+    // 寫入歷程紀錄
+    if (onCompressComplete && imageFile) {
+      const originalSizeMB = imageFile.size / (1024 * 1024);
+      const savedMB = originalSizeMB - realOutputSizeMB;
+      const savedPercent = (savedMB / originalSizeMB) * 100;
+      const ext = format === 'image/jpeg' ? 'JPEG' : 'WebP';
+      onCompressComplete({
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: Date.now(),
+        type: 'image',
+        filename: imageFile.name,
+        originalSizeMB,
+        compressedSizeMB: realOutputSizeMB,
+        savedMB,
+        savedPercent,
+        detail: `${ext} / ${imageInfo.width}×${imageInfo.height}`
+      });
+    }
+
     setCompressedBlob(null);
     setStatus('idle');
   };
@@ -151,11 +170,11 @@ export default function ImageCompressor() {
         }
 
         .apple-compressor-title {
-          font-family: "SF Pro Display", -apple-system, sans-serif;
+          font-family: var(--apple-font-display, "SF Pro Display", -apple-system, sans-serif);
           font-size: 24px;
           font-weight: 600;
           line-height: 1.2;
-          color: #1d1d1f;
+          color: var(--apple-ink);
           margin-bottom: 24px;
           text-align: center;
           display: flex;
@@ -166,8 +185,8 @@ export default function ImageCompressor() {
 
         /* 檔案卡片外觀 */
         .apple-file-card {
-          background-color: #ffffff;
-          border: 1px dashed #e0e0e0;
+          background-color: var(--apple-file-card-bg);
+          border: 1px dashed var(--apple-hairline);
           border-radius: 18px;
           padding: 32px 20px;
           display: flex;
@@ -177,21 +196,21 @@ export default function ImageCompressor() {
         }
 
         .apple-file-card:hover {
-          background-color: #f5f5f7;
-          border-color: #7a7a7a;
+          background-color: var(--apple-canvas-parchment);
+          border-color: var(--apple-ink-secondary);
         }
 
         .apple-file-card input[type="file"] {
-          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-family: var(--apple-font-text, "SF Pro Text", -apple-system, sans-serif);
           font-size: 14px;
-          color: #1d1d1f;
+          color: var(--apple-ink);
           cursor: pointer;
         }
 
         /* 核心配置排版 */
         .apple-control-stack {
           margin-top: 32px;
-          border-top: 1px solid #e0e0e0;
+          border-top: 1px solid var(--apple-hairline);
           padding-top: 24px;
         }
 
@@ -201,10 +220,10 @@ export default function ImageCompressor() {
 
         .apple-field-label {
           display: block;
-          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-family: var(--apple-font-text, "SF Pro Text", -apple-system, sans-serif);
           font-size: 14px;
           font-weight: 600;
-          color: #1d1d1f;
+          color: var(--apple-ink);
           margin-bottom: 10px;
           letter-spacing: -0.224px;
         }
@@ -224,7 +243,7 @@ export default function ImageCompressor() {
           flex: 1 !important;
           width: auto !important;
           height: 6px !important;
-          background: #000000 !important;
+          background: var(--apple-ink) !important;
           border: none !important;
           padding: 0 !important;
           margin: 0 !important;
@@ -241,7 +260,7 @@ export default function ImageCompressor() {
           width: 22px !important;
           height: 22px !important;
           border-radius: 50% !important;
-          background: #ffffff !important;
+          background: var(--apple-canvas) !important;
           border: 0.5px solid rgba(0, 0, 0, 0.2) !important;
           box-shadow: 0px 2px 7px rgba(0, 0, 0, 0.3) !important;
           cursor: pointer !important;
@@ -257,7 +276,7 @@ export default function ImageCompressor() {
           width: 22px !important;
           height: 22px !important;
           border-radius: 50% !important;
-          background: #ffffff !important;
+          background: var(--apple-canvas) !important;
           border: 0.5px solid rgba(0, 0, 0, 0.2) !important;
           box-shadow: 0px 2px 7px rgba(0, 0, 0, 0.3) !important;
           cursor: pointer !important;
@@ -271,25 +290,25 @@ export default function ImageCompressor() {
           height: 30px !important;
           padding: 0 8px !important;
           font-size: 14px !important;
-          border: 1px solid #e0e0e0 !important;
+          border: 1px solid var(--apple-hairline) !important;
           border-radius: 9999px !important;
           text-align: center !important;
-          background-color: #ffffff !important;
-          color: #1d1d1f !important;
+          background-color: var(--apple-canvas) !important;
+          color: var(--apple-ink) !important;
           box-sizing: border-box !important;
           margin: 0 !important;
           display: inline-block !important;
         }
 
         .apple-input-inline-capsule:focus {
-          border-color: #0071e3 !important;
+          border-color: var(--apple-primary-focus) !important;
           outline: none !important;
-          box-shadow: 0 0 0 1px #0071e3 !important;
+          box-shadow: 0 0 0 1px var(--apple-primary-focus) !important;
         }
 
         .apple-unit-text {
           font-size: 14px;
-          color: #7a7a7a;
+          color: var(--apple-ink-secondary);
           font-weight: 500;
         }
 
@@ -299,24 +318,24 @@ export default function ImageCompressor() {
           height: 42px;
           padding: 0 12px;
           font-size: 15px;
-          font-family: "SF Pro Text", -apple-system, sans-serif;
-          border: 1px solid #e0e0e0;
+          font-family: var(--apple-font-text, "SF Pro Text", -apple-system, sans-serif);
+          border: 1px solid var(--apple-hairline);
           border-radius: 8px;
-          background-color: #ffffff;
-          color: #1d1d1f;
+          background-color: var(--apple-select-bg);
+          color: var(--apple-ink);
           box-sizing: border-box;
           letter-spacing: -0.224px;
         }
 
         .apple-select-element:focus {
-          border-color: #0071e3;
+          border-color: var(--apple-primary-focus);
           outline: none;
         }
 
         /* 溫馨提示與警告橫幅 */
         .apple-warning-banner {
           margin-top: 16px;
-          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-family: var(--apple-font-text, "SF Pro Text", -apple-system, sans-serif);
           font-size: 14px;
           line-height: 1.45;
           color: #b78103;
@@ -328,12 +347,12 @@ export default function ImageCompressor() {
 
         /* 數據清單儀表板 */
         .apple-report-panel {
-          background-color: #f5f5f7;
+          background-color: var(--apple-report-bg);
           border-radius: 12px;
           padding: 16px 20px;
-          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-family: var(--apple-font-text, "SF Pro Text", -apple-system, sans-serif);
           font-size: 14px;
-          color: #1d1d1f;
+          color: var(--apple-ink);
         }
 
         .apple-report-row {
@@ -344,7 +363,7 @@ export default function ImageCompressor() {
         }
 
         .apple-report-label {
-          color: #7a7a7a;
+          color: var(--apple-ink-secondary);
         }
 
         .apple-report-value {
@@ -358,7 +377,7 @@ export default function ImageCompressor() {
         }
 
         .pulsing-blue {
-          color: #0066cc;
+          color: var(--apple-primary);
           animation: applePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
 
@@ -368,7 +387,7 @@ export default function ImageCompressor() {
 
         .apple-report-divider {
           border: 0;
-          border-top: 1px solid #e0e0e0;
+          border-top: 1px solid var(--apple-hairline);
           margin: 10px 0;
         }
 
@@ -380,12 +399,12 @@ export default function ImageCompressor() {
         }
 
         .apple-btn-secondary {
-          font-family: "SF Pro Text", -apple-system, sans-serif;
+          font-family: var(--apple-font-text, "SF Pro Text", -apple-system, sans-serif);
           font-size: 16px;
           font-weight: 500;
-          color: #0066cc;
+          color: var(--apple-primary);
           background-color: transparent;
-          border: 1px solid #0066cc;
+          border: 1px solid var(--apple-primary);
           border-radius: 9999px;
           padding: 0 24px;
           height: 44px;
@@ -401,13 +420,13 @@ export default function ImageCompressor() {
 
         /* 成果實體卡片 */
         .apple-artifact-card {
-          background-color: #ffffff;
-          border: 1px solid #e0e0e0;
+          background-color: var(--apple-artifact-bg);
+          border: 1px solid var(--apple-hairline);
           border-radius: 14px;
           padding: 24px;
           margin-top: 28px;
-          box-shadow: rgba(0, 0, 0, 0.22) 3px 5px 30px 0px;
-          font-family: "SF Pro Text", -apple-system, sans-serif;
+          box-shadow: rgba(0, 0, 0, 0.12) 3px 5px 30px 0px;
+          font-family: var(--apple-font-text, "SF Pro Text", -apple-system, sans-serif);
           font-size: 14px;
         }
 
@@ -499,7 +518,7 @@ export default function ImageCompressor() {
       {imageFile && (
         <div className="apple-control-stack">
 
-          {/* 新增項目：原始相片縮圖預覽 */}
+          {/* 原始相片縮圖預覽 */}
           {originalPreviewUrl && (
             <div className="apple-field-block">
               <label className="apple-field-label">🖼️ 原始照片預覽</label>
@@ -578,8 +597,8 @@ export default function ImageCompressor() {
           {/* 4. 整合分離式下載元件與成果工藝品卡片 */}
           {status === 'success' && compressedBlob && (
             <div className="apple-artifact-card">
-              <div className="apple-artifact-status" style={{ color: '#0066cc' }}>🎉 影像優化封裝完成</div>
-              <p style={{ color: '#1d1d1f', marginBottom: '16px' }}>
+              <div className="apple-artifact-status" style={{ color: 'var(--apple-primary)' }}>🎉 影像優化封裝完成</div>
+              <p style={{ color: 'var(--apple-ink)', marginBottom: '16px' }}>
                 已精密調校壓縮至目標範圍內（產出體積：<strong>{realOutputSizeMB.toFixed(2)} MB</strong>）。
               </p>
 

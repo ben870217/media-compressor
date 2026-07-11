@@ -1,31 +1,164 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import CompatibilityBanner from './components/CompatibilityBanner';
 import VideoCompressor from './components/VideoCompressor';
 import ImageCompressor from './components/ImageCompressor';
+import HistoryDashboard from './components/HistoryDashboard';
+
+const HISTORY_KEY = 'media_compressor_history';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('video');
+  const [themeMode, setThemeMode] = useState('auto'); // 'auto' | 'light' | 'dark'
+  const [history, setHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  // 處理系統主題變化與手動覆蓋
+  useEffect(() => {
+    const root = document.documentElement;
+    if (themeMode === 'auto') {
+      root.removeAttribute('data-theme');
+    } else {
+      root.setAttribute('data-theme', themeMode);
+    }
+  }, [themeMode]);
+
+  // 壓縮完成回呼 — 寫入 localStorage
+  const handleCompressComplete = useCallback((record) => {
+    setHistory(prev => {
+      const updated = [record, ...prev].slice(0, 50); // 最多保留 50 筆
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  }, []);
+
+  const handleHistoryClear = useCallback(() => {
+    setHistory([]);
+    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+  }, []);
+
+  const cycleTheme = () => {
+    setThemeMode(m => m === 'auto' ? 'dark' : m === 'dark' ? 'light' : 'auto');
+  };
+
+  const themeIcon = themeMode === 'dark' ? '🌙' : themeMode === 'light' ? '☀️' : '🌗';
+  const themeLabel = themeMode === 'auto' ? '自動' : themeMode === 'dark' ? '深色' : '淺色';
 
   return (
     <div className="apple-theme-container">
       {/* Apple 核心設計系統樣式表 */}
       <style>{`
-        /* --- 核心設計代碼 (Design Tokens) --- */
+        /* --- 核心設計代碼 (Design Tokens) — 淺色預設 --- */
         :root {
           --apple-primary: #0066cc;
           --apple-primary-focus: #0071e3;
           --apple-primary-on-dark: #2997ff;
           --apple-ink: #1d1d1f;
+          --apple-ink-secondary: #7a7a7a;
           --apple-canvas: #ffffff;
           --apple-canvas-parchment: #f5f5f7;
           --apple-surface-pearl: #fafafc;
           --apple-surface-black: #000000;
           --apple-ink-muted-80: #333333;
           --apple-hairline: #e0e0e0;
+          --apple-nav-bg: rgba(245, 245, 247, 0.8);
+          --apple-report-bg: #f5f5f7;
+          --apple-file-card-bg: #ffffff;
+          --apple-artifact-bg: #ffffff;
+          --apple-select-bg: #ffffff;
+          --apple-chip-bg: #ffffff;
+          --apple-chip-active-bg: #0066cc;
+          --apple-chip-active-color: #ffffff;
+          --apple-guide-caption-bg: #f5f5f7;
+          --apple-download-panel-bg: rgba(49, 162, 76, 0.06);
 
           /* 字體系統 */
           --apple-font-display: "SF Pro Display", -apple-system, system-ui, sans-serif;
           --apple-font-text: "SF Pro Text", -apple-system, system-ui, sans-serif;
+
+          color-scheme: light;
+        }
+
+        /* --- 深色模式 Design Tokens --- */
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme="light"]) {
+            --apple-primary: #2997ff;
+            --apple-primary-focus: #40a9ff;
+            --apple-ink: #f5f5f7;
+            --apple-ink-secondary: #8e8e93;
+            --apple-canvas: #1c1c1e;
+            --apple-canvas-parchment: #2c2c2e;
+            --apple-surface-pearl: #2c2c2e;
+            --apple-surface-black: #000000;
+            --apple-ink-muted-80: #d1d1d6;
+            --apple-hairline: #3a3a3c;
+            --apple-nav-bg: rgba(28, 28, 30, 0.85);
+            --apple-report-bg: #2c2c2e;
+            --apple-file-card-bg: #1c1c1e;
+            --apple-artifact-bg: #2c2c2e;
+            --apple-select-bg: #2c2c2e;
+            --apple-chip-bg: #2c2c2e;
+            --apple-chip-active-bg: #2997ff;
+            --apple-chip-active-color: #ffffff;
+            --apple-guide-caption-bg: #2c2c2e;
+            --apple-download-panel-bg: rgba(49, 162, 76, 0.1);
+            color-scheme: dark;
+          }
+        }
+
+        /* 手動強制深色 */
+        :root[data-theme="dark"] {
+          --apple-primary: #2997ff;
+          --apple-primary-focus: #40a9ff;
+          --apple-ink: #f5f5f7;
+          --apple-ink-secondary: #8e8e93;
+          --apple-canvas: #1c1c1e;
+          --apple-canvas-parchment: #2c2c2e;
+          --apple-surface-pearl: #2c2c2e;
+          --apple-surface-black: #000000;
+          --apple-ink-muted-80: #d1d1d6;
+          --apple-hairline: #3a3a3c;
+          --apple-nav-bg: rgba(28, 28, 30, 0.85);
+          --apple-report-bg: #2c2c2e;
+          --apple-file-card-bg: #1c1c1e;
+          --apple-artifact-bg: #2c2c2e;
+          --apple-select-bg: #2c2c2e;
+          --apple-chip-bg: #2c2c2e;
+          --apple-chip-active-bg: #2997ff;
+          --apple-chip-active-color: #ffffff;
+          --apple-guide-caption-bg: #2c2c2e;
+          --apple-download-panel-bg: rgba(49, 162, 76, 0.1);
+          color-scheme: dark;
+        }
+
+        /* 手動強制淺色 */
+        :root[data-theme="light"] {
+          --apple-primary: #0066cc;
+          --apple-primary-focus: #0071e3;
+          --apple-ink: #1d1d1f;
+          --apple-ink-secondary: #7a7a7a;
+          --apple-canvas: #ffffff;
+          --apple-canvas-parchment: #f5f5f7;
+          --apple-surface-pearl: #fafafc;
+          --apple-ink-muted-80: #333333;
+          --apple-hairline: #e0e0e0;
+          --apple-nav-bg: rgba(245, 245, 247, 0.8);
+          --apple-report-bg: #f5f5f7;
+          --apple-file-card-bg: #ffffff;
+          --apple-artifact-bg: #ffffff;
+          --apple-select-bg: #ffffff;
+          --apple-chip-bg: #ffffff;
+          --apple-chip-active-bg: #0066cc;
+          --apple-chip-active-color: #ffffff;
+          --apple-guide-caption-bg: #f5f5f7;
+          --apple-download-panel-bg: rgba(49, 162, 76, 0.06);
+          color-scheme: light;
         }
 
         /* 全局排版重置 */
@@ -40,6 +173,7 @@ export default function App() {
           font-size: 17px;
           line-height: 1.47;
           letter-spacing: -0.374px;
+          transition: background-color 0.3s ease, color 0.3s ease;
         }
 
         /* --- 頂端導覽列 (global-nav) --- */
@@ -72,8 +206,9 @@ export default function App() {
           top: 0;
           z-index: 100;
           height: 52px;
-          background-color: rgba(245, 245, 247, 0.8);
+          background-color: var(--apple-nav-bg);
           backdrop-filter: saturate(180%) blur(20px);
+          -webkit-backdrop-filter: saturate(180%) blur(20px);
           border-bottom: 1px solid var(--apple-hairline);
           display: flex;
           justify-content: space-between;
@@ -94,6 +229,7 @@ export default function App() {
         .apple-tabs-container {
           display: flex;
           gap: 8px;
+          align-items: center;
         }
 
         .apple-tab-chip {
@@ -123,6 +259,34 @@ export default function App() {
         }
 
         .apple-tab-chip:active {
+          transform: scale(0.95);
+        }
+
+        /* 主題切換按鈕 */
+        .apple-theme-toggle {
+          font-family: var(--apple-font-text);
+          font-size: 12px;
+          font-weight: 400;
+          color: var(--apple-ink-secondary);
+          background-color: transparent;
+          border: 1px solid var(--apple-hairline);
+          border-radius: 9999px;
+          padding: 4px 10px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          height: 28px;
+          white-space: nowrap;
+        }
+
+        .apple-theme-toggle:hover {
+          background-color: var(--apple-canvas-parchment);
+          color: var(--apple-ink);
+        }
+
+        .apple-theme-toggle:active {
           transform: scale(0.95);
         }
 
@@ -160,7 +324,7 @@ export default function App() {
         }
 
         /* --- 元件與表單 --- */
-        .apple-main-gallery input:not([type="file"]):not([type="checkbox"]),
+        .apple-main-gallery input:not([type="file"]):not([type="checkbox"]):not([type="range"]),
         .apple-main-gallery select,
         .apple-main-gallery textarea {
           width: 100%;
@@ -253,6 +417,7 @@ export default function App() {
           font-size: 12px;
           color: var(--apple-ink-muted-80);
           text-align: left;
+          transition: background-color 0.3s ease;
         }
 
         .apple-footer-content {
@@ -332,6 +497,7 @@ export default function App() {
           .apple-tabs-container {
             width: 100%;
             justify-content: center;
+            flex-wrap: wrap;
           }
           .apple-tab-chip {
             flex: 1;
@@ -339,16 +505,20 @@ export default function App() {
             padding: 6px 12px;
             font-size: 13px;
           }
+          .apple-theme-toggle {
+            font-size: 11px;
+            padding: 3px 8px;
+          }
         }
       `}</style>
 
       {/* 🛡️ 1. 相容性守門員線 */}
       <CompatibilityBanner />
 
-      {/* 頂層全域導覽列 (global-nav) - 已移除 MetaBunny Studio 顯示 */}
+      {/* 頂層全域導覽列 (global-nav) */}
       <nav className="apple-global-nav">
         <div className="apple-global-brand">
-          <span className="apple-global-brand-icon"></span>
+          <span className="apple-global-brand-icon"></span>
         </div>
         <div className="apple-global-menu-placeholder">Design Gallery</div>
       </nav>
@@ -370,6 +540,14 @@ export default function App() {
           >
             <span>📸</span> 照片
           </button>
+          <button
+            onClick={cycleTheme}
+            className="apple-theme-toggle"
+            title={`目前：${themeLabel}模式，點擊切換`}
+          >
+            <span>{themeIcon}</span>
+            <span>{themeLabel}</span>
+          </button>
         </div>
       </header>
 
@@ -380,8 +558,14 @@ export default function App() {
           極致的高畫質前端硬體壓縮技術。無需上傳、隱私安全，在瀏覽器內即可完成高效率轉碼。
         </p>
 
-        {activeTab === 'video' ? <VideoCompressor /> : <ImageCompressor />}
+        {activeTab === 'video'
+          ? <VideoCompressor onCompressComplete={handleCompressComplete} />
+          : <ImageCompressor onCompressComplete={handleCompressComplete} />
+        }
       </main>
+
+      {/* 歷程紀錄面板 */}
+      <HistoryDashboard history={history} onClear={handleHistoryClear} />
 
       {/* 規格資訊頁尾 */}
       <footer className="apple-footer">
