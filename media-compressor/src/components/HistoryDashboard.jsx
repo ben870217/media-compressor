@@ -20,7 +20,8 @@ import { useState } from 'react';
 export default function HistoryDashboard({ history = [], onClear }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const totalSavedMB = history.reduce((acc, r) => acc + (r.savedMB || 0), 0);
+  const successfulHistory = history.filter((record) => record.status !== 'failed' && record.status !== 'cancelled');
+  const totalSavedMB = successfulHistory.reduce((acc, r) => acc + (r.savedMB || 0), 0);
   const totalCount = history.length;
 
   return (
@@ -368,12 +369,16 @@ export default function HistoryDashboard({ history = [], onClear }) {
                       <div className="apple-history-item-detail">{record.detail}</div>
                     </div>
                     <div className="apple-history-item-sizes">
-                      <div className="apple-history-item-saved">
-                        -{record.savedPercent.toFixed(0)}% ({record.savedMB.toFixed(1)} MB)
-                      </div>
-                      <div className="apple-history-item-original">
-                        {record.originalSizeMB.toFixed(1)} → {record.compressedSizeMB.toFixed(2)} MB
-                      </div>
+                      {record.status === 'failed' || record.status === 'cancelled' ? (
+                        <div className="apple-history-item-original">{record.status === 'failed' ? '失敗' : '已取消'}</div>
+                      ) : <>
+                        <div className="apple-history-item-saved">
+                          -{(record.savedPercent || 0).toFixed(0)}% ({(record.savedMB || 0).toFixed(1)} MB)
+                        </div>
+                        <div className="apple-history-item-original">
+                          {(record.originalSizeMB || 0).toFixed(1)} → {(record.compressedSizeMB || 0).toFixed(2)} MB
+                        </div>
+                      </>}
                     </div>
                     <div className="apple-history-item-time">
                       {new Date(record.timestamp).toLocaleString('zh-TW', {

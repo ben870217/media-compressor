@@ -1,7 +1,7 @@
 // src/workers/imageProcessor.js
 
 self.onmessage = async (e) => {
-  const { type, file, targetSizeMB, format = 'image/jpeg' } = e.data;
+  const { type, requestId, file, targetSizeMB, format = 'image/jpeg', dimensions, fit = 'contain', background = '#ffffff' } = e.data;
 
   if (type === 'START_PRE_COMPRESSION') {
     try {
@@ -12,11 +12,32 @@ self.onmessage = async (e) => {
       });
 
       // 2. 初始化離屏畫布 (OffscreenCanvas)
-      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const outputWidth = dimensions?.width || bitmap.width;
+      const outputHeight = dimensions?.height || bitmap.height;
+      const canvas = new OffscreenCanvas(outputWidth, outputHeight);
       const ctx = canvas.getContext('2d');
 
-      // 將轉正後的圖片繪製到畫布上
-      ctx.drawImage(bitmap, 0, 0);
+      // 維持比例：contain 加背景，cover 置中裁切；不會拉伸。
+      if (background === 'blur') {
+        const fillScale = Math.max(outputWidth / bitmap.width, outputHeight / bitmap.height);
+        const fillWidth = bitmap.width * fillScale;
+        const fillHeight = bitmap.height * fillScale;
+        ctx.filter = 'blur(18px)';
+        ctx.drawImage(bitmap, (outputWidth - fillWidth) / 2, (outputHeight - fillHeight) / 2, fillWidth, fillHeight);
+        ctx.filter = 'none';
+      } else {
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, outputWidth, outputHeight);
+      }
+      const sourceRatio = bitmap.width / bitmap.height;
+      const targetRatio = outputWidth / outputHeight;
+      const useCover = fit === 'cover';
+      const scale = useCover
+        ? (sourceRatio > targetRatio ? outputHeight / bitmap.height : outputWidth / bitmap.width)
+        : (sourceRatio > targetRatio ? outputWidth / bitmap.width : outputHeight / bitmap.height);
+      const drawWidth = bitmap.width * scale;
+      const drawHeight = bitmap.height * scale;
+      ctx.drawImage(bitmap, (outputWidth - drawWidth) / 2, (outputHeight - drawHeight) / 2, drawWidth, drawHeight);
 
       // 繪製完畢後釋放 bitmap 記憶體
       bitmap.close();
@@ -63,6 +84,7 @@ self.onmessage = async (e) => {
       // 4. 將大功告成的結果與 Blob 傳回 React 主執行緒
       self.postMessage({
         status: 'success',
+        requestId,
         finalSize: finalSizeMB,
         quality: bestQuality,
         blob: bestBlob, // 這裡的 Blob 會被封裝傳回
@@ -74,7 +96,8 @@ self.onmessage = async (e) => {
       // 錯誤攔截，避免 Worker 崩潰導致網頁卡死
       self.postMessage({
         status: 'error',
-        message: error.message
+        requestId,
+        error: error.message
       });
     }
   }
