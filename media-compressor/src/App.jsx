@@ -284,6 +284,9 @@ export default function App() {
 
         /* 行動端 RWD */
         @media (max-width: 735px) {
+          .apple-global-nav {
+            padding: 0 16px;
+          }
           .apple-sub-nav {
             padding: 0 16px;
           }
@@ -291,7 +294,11 @@ export default function App() {
             padding: 48px 16px;
           }
           .apple-gallery-title {
-            font-size: 34px;
+            font-size: 32px;
+          }
+          .apple-gallery-desc {
+            font-size: 15px;
+            margin-bottom: 32px;
           }
           .apple-btn-group {
             flex-direction: column;
@@ -300,10 +307,37 @@ export default function App() {
           .apple-main-gallery button {
             width: 100%;
           }
+          .apple-footer {
+            padding: 48px 16px;
+          }
           .apple-footer-content {
             flex-direction: column;
-            align-items: flex-start;
+            align-items: center;
+            text-align: center;
             gap: 16px;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .apple-sub-nav {
+            flex-direction: column;
+            height: auto;
+            padding: 12px 16px;
+            gap: 12px;
+            align-items: center;
+          }
+          .apple-sub-title {
+            font-size: 19px;
+          }
+          .apple-tabs-container {
+            width: 100%;
+            justify-content: center;
+          }
+          .apple-tab-chip {
+            flex: 1;
+            justify-content: center;
+            padding: 6px 12px;
+            font-size: 13px;
           }
         }
       `}</style>

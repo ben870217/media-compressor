@@ -521,6 +521,70 @@ export default function VideoCompressor({ onFileCleared }) {
           background-color: #000000;
           outline: none;
         }
+
+        .apple-custom-bitrate-container {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+
+        .apple-artifact-action-row {
+          display: flex;
+          gap: 12px;
+        }
+
+        @media (max-width: 580px) {
+          .apple-compressor-workspace {
+            padding: 0;
+          }
+          .apple-action-cluster {
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+          }
+          .apple-btn-main,
+          .apple-btn-secondary {
+            width: 100%;
+            flex: none !important;
+          }
+          .apple-option-chip {
+            padding: 6px 12px;
+            font-size: 13px;
+            height: 32px;
+          }
+          .apple-chip-row {
+            gap: 8px;
+          }
+          .apple-main-gallery input.apple-input-inline-capsule {
+            flex-grow: 1;
+            max-width: none !important;
+            width: auto !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .apple-report-panel {
+            padding: 12px 14px;
+            font-size: 13px;
+          }
+          .apple-report-row {
+            padding: 4px 0;
+          }
+          .apple-preview-player {
+            max-height: 220px;
+          }
+          .apple-artifact-card {
+            padding: 16px;
+            margin-top: 20px;
+          }
+          .apple-artifact-card button {
+            width: 100% !important;
+          }
+          .apple-artifact-action-row {
+            flex-direction: column;
+            gap: 8px;
+          }
+        }
       `}</style>
 
       <h2 className="apple-compressor-title">
@@ -610,7 +674,7 @@ export default function VideoCompressor({ onFileCleared }) {
               </select>
 
               {bitrateMode === 'custom' && (
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <div className="apple-custom-bitrate-container">
                   <input
                     type="number"
                     value={customBitrate === 'auto' ? '2000' : customBitrate}
@@ -666,7 +730,7 @@ export default function VideoCompressor({ onFileCleared }) {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div className="apple-artifact-action-row">
             <button onClick={() => handleCompress(0.82)} className="apple-btn-main" style={{ height: '38px', fontSize: '14px' }}>
               🔄 以 82% 碼率重壓
             </button>

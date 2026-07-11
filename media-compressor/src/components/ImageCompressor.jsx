@@ -437,6 +437,47 @@ export default function ImageCompressor() {
           display: block;
           background-color: #000000;
         }
+
+        @media (max-width: 580px) {
+          .apple-compressor-workspace {
+            padding: 0;
+          }
+          .apple-slider-row {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
+          }
+          .apple-slider-row > div {
+            justify-content: flex-end;
+          }
+          .apple-action-cluster {
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+          }
+          .apple-btn-main,
+          .apple-btn-secondary {
+            width: 100%;
+            flex: none !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .apple-report-panel {
+            padding: 12px 14px;
+            font-size: 13px;
+          }
+          .apple-report-row {
+            padding: 4px 0;
+          }
+          .apple-preview-image {
+            max-height: 220px;
+          }
+          .apple-artifact-card {
+            padding: 16px;
+            margin-top: 20px;
+          }
+        }
       `}</style>
 
       <h2 className="apple-compressor-title">
