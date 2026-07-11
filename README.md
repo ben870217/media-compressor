@@ -2,42 +2,43 @@
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-0066cc?style=for-the-badge&logo=github)](https://ben870217.github.io/media-compressor/)
 
-MediaCompressor 是一套以 React、WebCodecs 與 Mediabunny 打造的純前端媒體壓縮工具。影片與圖片都在瀏覽器本機處理，不需要上傳到伺服器。
+MediaCompressor 是一套以 React、WebCodecs 與 Mediabunny 打造的純前端媒體壓縮工具。影片與圖片都在瀏覽器本機完成處理，不需要上傳到伺服器。
 
 **[開啟線上版本](https://ben870217.github.io/media-compressor/)**
 
-## 功能
+## 主要功能
 
 ### 影片壓縮
 
-- 支援匯入 MP4、MOV 與 MKV，統一輸出為 MP4。
-- 可設定目標容量，並提供 JIRA 10 MB 快速選項。
-- 可選擇 1080p、720p 或 480p；碼率不足時會自動降低解析度。
-- 支援 H.264、H.265、VP9 與 AV1 編碼選項。
+- 支援匯入 MP4、MOV、MKV，輸出統一為 MP4。
+- 可設定目標容量，並提供 10 MB 快速選項。
+- 可選擇 1080p、720p、480p；若碼率不足，會自動降解析度。
+- 支援 H.264、H.265、VP9、AV1 編碼。
 - 可保留原始影格率，或限制為 60、30、24、15 fps。
-- 支援自動／自訂視訊碼率及移除音訊。
-- 顯示轉碼進度、實際輸出大小及壓縮前後預覽；超過目標容量時可降低碼率重試或直接下載。
+- 支援自動／自訂視訊碼率，以及移除音訊。
+- 顯示轉碼進度、實際輸出大小與壓縮前後預覽；若超過目標容量，可降低碼率重試或直接下載。
 
 ### 圖片壓縮
 
-- 支援匯入 JPEG、PNG 與 WebP，輸出為 JPEG 或 WebP。
-- 使用 Web Worker 與 OffscreenCanvas 在背景處理，避免阻塞主要介面。
-- 透過二分搜尋調整品質，盡量貼近指定的目標容量。
-- 讀取 EXIF 方向並自動校正；超過 4K／約 800 萬像素時顯示效能提醒。
+- 支援匯入 JPEG、PNG、WebP，輸出為 JPEG 或 WebP。
+- 使用 Web Worker 與 OffscreenCanvas 在背景處理，避免阻塞主介面。
+- 透過二分搜尋調整品質，盡量貼近指定目標容量。
+- 讀取 EXIF 方向並自動校正。
+- 偵測 4K 或超大尺寸圖片時會顯示效能提醒。
 - 提供壓縮前後預覽與自訂下載檔名。
 
-### 其他
+### 介面與歷程
 
-- 自動、深色與淺色三種主題模式。
-- 最近 50 筆成功壓縮紀錄保存在瀏覽器 `localStorage`，可隨時清除。
-- 自動管理預覽用的 Blob URL，降低長時間操作造成的記憶體占用。
+- 提供自動、深色、淺色三種主題模式。
+- 最近 50 筆成功壓縮紀錄保存在瀏覽器 `localStorage`。
+- 自動管理預覽用的 Blob URL，降低長時間操作的記憶體占用。
 - 響應式介面，支援桌面與行動裝置。
 
 ## 瀏覽器需求
 
 建議使用最新版 Chrome、Edge 或 Safari。影片轉碼需要 WebCodecs，圖片背景處理需要 OffscreenCanvas 與 Web Worker。
 
-實際可用的輸入格式、輸出 codec、轉碼速度及硬體加速能力，取決於瀏覽器、作業系統和裝置硬體。介面顯示某個 codec 選項不代表目前裝置一定能完成該格式的編碼；若缺少核心 API，頁面會顯示相容性提示。
+實際可用的輸入格式、輸出 codec、轉碼速度與硬體加速能力，取決於瀏覽器、作業系統與裝置硬體。介面顯示某個 codec 選項，不代表目前裝置一定能完成該格式的編碼；若缺少核心 API，頁面會顯示相容性提示。
 
 > 單一檔案上限為 2 GB。瀏覽器轉碼會占用較多 CPU、GPU 與記憶體，處理大型或高解析度檔案前請先確認裝置資源。
 
@@ -52,7 +53,7 @@ MediaCompressor 是一套以 React、WebCodecs 與 Mediabunny 打造的純前端
 
 ## 開始開發
 
-應用程式位於 `media-compressor/` 子目錄。建議使用專案附帶的 Docker Compose 環境，以避免 Node.js 版本差異。
+應用程式位於 `media-compressor/` 子目錄。建議使用專案附帶的 Docker Compose 環境，避免 Node.js 版本差異。
 
 ### 使用 Docker（建議）
 
@@ -69,7 +70,7 @@ docker exec -w /app/media-compressor media-compressor-dev npm install
 docker exec -w /app/media-compressor media-compressor-dev npm run dev
 ```
 
-開啟 <http://localhost:5173/media-compressor/>。Vite 已設定監聽 `0.0.0.0:5173`、固定連接埠及 polling，支援 Docker volume 下的熱更新。
+開啟 <http://localhost:5173/media-compressor/>。Vite 已設定監聽 `0.0.0.0:5173`、固定連接埠與 polling，支援 Docker volume 下的熱更新。
 
 停止環境：
 
@@ -146,6 +147,6 @@ npm run build
 
 ## 注意事項
 
-- 目標容量是估算值。MP4 封裝開銷、codec 行為及來源內容複雜度都可能讓實際輸出略高於設定值。
+- 目標容量是估算值。MP4 封裝開銷、codec 行為與來源內容複雜度都可能讓實際輸出略高於設定。
 - 圖片輸出會重新編碼，不保證保留原檔的完整 metadata。
 - 影片 codec 相容性應以使用裝置的實際測試為準；跨平台分享時，H.264 通常是較穩妥的選擇。
