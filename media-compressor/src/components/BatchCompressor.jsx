@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Conversion, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat } from 'mediabunny';
 import { ASPECT_OPTIONS, changedFields, defaultSettings, isAnimatedImage, mergedSettings, normalizeAspect, outputDimensions } from '../utils/mediaSettings';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 const MAX_FILES = 50;
+const CANCELLED = 'CANCELLED_BY_USER';
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const backgroundColor = (value) => value === 'black' ? '#000000' : value === 'white' ? '#ffffff' : value === 'blur' ? 'blur' : value.startsWith('#') ? value : '#ffffff';
 
@@ -38,19 +39,31 @@ export default function BatchCompressor({ type, onCompressComplete }) {
   const requests = useRef(new Map());
   const cancelCurrent = useRef(false);
   const stopAfterCurrentRef = useRef(false);
+  const itemsRef = useRef([]);
+  const currentItemRef = useRef(null);
+  const currentRequestIdRef = useRef(null);
+  const currentConversionRef = useRef(null);
+  const cancelSignalRef = useRef(null);
 
-  useEffect(() => {
-    if (type !== 'image') return undefined;
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
+  const createImageWorker = useCallback(() => {
     const worker = new Worker(new URL('../workers/imageProcessor.js', import.meta.url), { type: 'module' });
     worker.onmessage = ({ data }) => {
       const request = requests.current.get(data.requestId);
       if (!request) return;
       requests.current.delete(data.requestId);
+      if (currentRequestIdRef.current === data.requestId) currentRequestIdRef.current = null;
       data.status === 'success' ? request.resolve(data) : request.reject(new Error(data.error || data.message || '相片壓縮失敗'));
     };
     workerRef.current = worker;
-    return () => worker.terminate();
-  }, [type]);
+  }, []);
+
+  useEffect(() => {
+    if (type !== 'image') return undefined;
+    createImageWorker();
+    return () => workerRef.current?.terminate();
+  }, [createImageWorker, type]);
 
   const addFiles = async (fileList) => {
     const selected = Array.from(fileList);
@@ -70,7 +83,11 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     setItems((previous) => [...previous, ...newItems]);
   };
 
-  const updateItem = (id, update) => setItems((previous) => previous.map((item) => item.id === id ? { ...item, ...update } : item));
+  const updateItem = (id, update) => setItems((previous) => {
+    const next = previous.map((item) => item.id === id ? { ...item, ...update } : item);
+    itemsRef.current = next;
+    return next;
+  });
   const effective = (item) => mergedSettings(base, item.overrides);
   const updateBase = (key, value) => setBase((previous) => ({ ...previous, [key]: value }));
   const override = (item, key, value) => updateItem(item.id, { overrides: { ...item.overrides, [key]: value } });
@@ -78,7 +95,8 @@ export default function BatchCompressor({ type, onCompressComplete }) {
   const resetItem = (item) => updateItem(item.id, { overrides: {} });
 
   const processImage = (item, settings, dimensions) => new Promise((resolve, reject) => {
-    const requestId = uid(); requests.current.set(requestId, { resolve, reject });
+    if (cancelCurrent.current) { reject(new Error(CANCELLED)); return; }
+    const requestId = uid(); currentRequestIdRef.current = requestId; requests.current.set(requestId, { resolve, reject });
     workerRef.current.postMessage({ type: 'START_PRE_COMPRESSION', requestId, file: item.file, targetSizeMB: settings.targetSize, format: settings.format, dimensions, fit: settings.fit, background: backgroundColor(settings.background) });
   });
 
@@ -91,40 +109,88 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     const videoRate = Math.max(150000, Math.floor(((settings.targetSize * 1024 * 1024 * 8 * .9) / duration - audioRate) * (.82 ** attempt)));
     const conversion = await Conversion.init({ input, output, video: { codec: settings.format, bitrate: videoRate, width: dimensions.width, height: dimensions.height, fit: settings.fit === 'cover' ? 'cover' : 'contain', frameRate: settings.fps === 'original' ? undefined : Number(settings.fps) }, audio: settings.stripAudio ? { discard: true } : { codec: 'aac', bitrate: audioRate } });
     if (!conversion.isValid) throw new Error('此瀏覽器/裝置不支援所選影片編碼。請改用 H.264 / AVC，或降低解析度後重試。');
-    conversion.onProgress = (progress) => { if (!cancelCurrent.current) updateItem(item.id, { progress: Math.round(progress * 100) }); };
-    await conversion.execute();
-    return new Blob([target.buffer], { type: 'video/mp4' });
+    conversion.onProgress = (progress) => { if (currentItemRef.current?.id === item.id && !cancelCurrent.current) updateItem(item.id, { progress: Math.round(progress * 100) }); };
+    currentConversionRef.current = conversion;
+    try {
+      if (cancelCurrent.current) await conversion.cancel();
+      await conversion.execute();
+      return new Blob([target.buffer], { type: 'video/mp4' });
+    } finally { if (currentConversionRef.current === conversion) currentConversionRef.current = null; }
   };
 
   const runQueue = async (retryOnly = false) => {
     if (running) return;
     setRunning(true); stopAfterCurrentRef.current = false; setNotice(''); cancelCurrent.current = false;
-    const snapshot = items.filter((item) => (retryOnly ? item.status === 'failed' : item.status === 'pending'));
-    for (const source of snapshot) {
+    const workQueue = itemsRef.current.filter((item) => (retryOnly ? item.status === 'failed' : item.status === 'pending')).map((item) => item.id);
+    while (workQueue.length) {
+      const sourceId = workQueue.shift();
       if (stopAfterCurrentRef.current) break;
-      const item = items.find((candidate) => candidate.id === source.id) || source;
+      const item = itemsRef.current.find((candidate) => candidate.id === sourceId);
+      if (!item) continue;
       if (item.status === 'blocked') continue;
+      currentItemRef.current = item;
       updateItem(item.id, { status: 'processing', progress: 0, error: '' });
       const settings = effective(item);
       const dimensions = outputDimensions({ ...item.meta, ...settings, even: type === 'video' });
       try {
-        let result; let attempts = 0;
-        if (type === 'image') result = (await processImage(item, settings, dimensions)).blob;
-        else {
-          do { result = await processVideo(item, settings, dimensions, attempts); attempts += 1; } while (result.size > settings.targetSize * 1024 ** 2 && attempts <= 2 && !cancelCurrent.current);
-        }
-        if (cancelCurrent.current) {
-          updateItem(item.id, { status: 'cancelled', progress: 0 });
+        const processing = type === 'image'
+          ? processImage(item, settings, dimensions).then((response) => response.blob)
+          : processVideo(item, settings, dimensions, item.retryAttempt || 0);
+        const cancelled = new Promise((resolve) => { cancelSignalRef.current = () => resolve({ cancelled: true }); });
+        const outcome = await Promise.race([
+          processing.then((result) => ({ result }), (error) => ({ error })),
+          cancelled,
+        ]);
+        cancelSignalRef.current = null;
+        if (outcome.cancelled) {
+          updateItem(item.id, { status: 'cancelled', progress: 0, error: '' });
+          setNotice('目前任務已取消，繼續處理下一項。');
           onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'cancelled', filename: item.file.name, detail: '使用者取消目前項目', batchSettings: base, overrides: item.overrides });
-          cancelCurrent.current = false;
           continue;
         }
+        if (outcome.error) throw outcome.error;
+        const { result } = outcome;
         const overTarget = result.size > settings.targetSize * 1024 ** 2;
-        updateItem(item.id, { status: 'success', progress: 100, result: { blob: result, dimensions, overTarget, attempts } });
+        updateItem(item.id, { status: 'success', progress: 100, result: { blob: result, dimensions, overTarget } });
+        if (cancelCurrent.current) setNotice('目前任務已完成，取消未生效；繼續處理下一項。');
         onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'success', filename: item.file.name, originalSizeMB: item.file.size / 1024 ** 2, compressedSizeMB: result.size / 1024 ** 2, savedMB: (item.file.size - result.size) / 1024 ** 2, savedPercent: ((item.file.size - result.size) / item.file.size) * 100, detail: `${dimensions.width}×${dimensions.height} / ${settings.format}`, batchSettings: base, overrides: item.overrides });
-      } catch (error) { updateItem(item.id, { status: 'failed', error: error.message, progress: 0 }); onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'failed', filename: item.file.name, detail: error.message, batchSettings: base, overrides: item.overrides }); }
+        if (type === 'video' && overTarget && !item.retryAttempt && !cancelCurrent.current) {
+          const retry = { ...item, id: uid(), status: 'pending', progress: 0, error: '', result: null, retryAttempt: 1, retryOf: item.id };
+          setItems((previous) => { const index = previous.findIndex((candidate) => candidate.id === item.id); const next = [...previous]; next.splice(index + 1, 0, retry); itemsRef.current = next; return next; });
+          workQueue.unshift(retry.id);
+        }
+      } catch (error) {
+        if (error.message === CANCELLED || error.name === 'ConversionCanceledError') {
+          updateItem(item.id, { status: 'cancelled', progress: 0, error: '' });
+          setNotice('目前任務已取消，繼續處理下一項。');
+          onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'cancelled', filename: item.file.name, detail: '使用者取消目前項目', batchSettings: base, overrides: item.overrides });
+        } else { updateItem(item.id, { status: 'failed', error: error.message, progress: 0 }); onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'failed', filename: item.file.name, detail: error.message, batchSettings: base, overrides: item.overrides }); }
+      } finally { cancelCurrent.current = false; cancelSignalRef.current = null; if (currentItemRef.current?.id === item.id) currentItemRef.current = null; }
     }
     setRunning(false);
+  };
+
+  const cancelCurrentTask = () => {
+    const item = currentItemRef.current;
+    if (!item || cancelCurrent.current) return;
+    cancelCurrent.current = true;
+    updateItem(item.id, { status: 'cancelling', error: '' });
+    setNotice('正在取消目前任務…');
+    cancelSignalRef.current?.();
+    if (type === 'video') {
+      currentConversionRef.current?.cancel().catch((error) => {
+        updateItem(item.id, { status: 'failed', error: error.message });
+        setNotice('取消轉碼時發生錯誤，請重試或移除此項目。');
+      });
+      return;
+    }
+    const requestId = currentRequestIdRef.current;
+    const request = requestId && requests.current.get(requestId);
+    if (requestId) requests.current.delete(requestId);
+    currentRequestIdRef.current = null;
+    request?.reject(new Error(CANCELLED));
+    workerRef.current?.terminate();
+    createImageWorker();
   };
   const batchId = useRef(uid());
 
@@ -137,7 +203,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     next.splice(to, 0, next.splice(from, 1)[0]);
     return next;
   });
-  const download = (item) => { const url = URL.createObjectURL(item.result.blob); const link = document.createElement('a'); link.href = url; link.download = `${sanitizeFilename(item.file.name.replace(/\.[^.]+$/, ''))}_compressed.${type === 'video' ? 'mp4' : item.result.blob.type === 'image/webp' ? 'webp' : 'jpg'}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 2000); };
+  const download = (item) => { const url = URL.createObjectURL(item.result.blob); const link = document.createElement('a'); link.href = url; const suffix = item.retryAttempt ? `_compressed_retry-${item.retryAttempt}` : '_compressed'; link.download = `${sanitizeFilename(item.file.name.replace(/\.[^.]+$/, ''))}${suffix}.${type === 'video' ? 'mp4' : item.result.blob.type === 'image/webp' ? 'webp' : 'jpg'}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 2000); };
   const downloadAll = () => { setNotice('瀏覽器可能要求允許多重下載。'); items.filter((item) => item.status === 'success').forEach((item, index) => setTimeout(() => download(item), index * 250)); };
   const activeSettings = useMemo(() => ({ ...base }), [base]);
 
@@ -148,21 +214,21 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     {notice && <p className="batch-notice">{notice}</p>}
     <section className="batch-settings"><h3>批次共用設定</h3><Settings settings={activeSettings} type={type} onChange={updateBase} fields="primary" /><details className="advanced-settings"><summary>進階設定 <span>{advancedSummary(activeSettings, type)}</span></summary><Settings settings={activeSettings} type={type} onChange={updateBase} fields="advanced" /></details></section>
     {items.length > 0 && <>
-      <div className="queue-actions"><span>{items.length}/50 個檔案</span><button onClick={() => runQueue() } disabled={running}>處理待處理項目</button><button onClick={() => runQueue(true)} disabled={running || !items.some((item) => item.status === 'failed')}>重試失敗項目</button>{running && <><button onClick={() => { stopAfterCurrentRef.current = true; }}>目前完成後停止</button><button onClick={() => { cancelCurrent.current = true; }}>取消目前並繼續</button></>}<button onClick={downloadAll} disabled={!items.some((item) => item.status === 'success')}>全部依序下載</button></div>
+      <div className="queue-actions"><span>{items.length}/50 個檔案</span><button onClick={() => runQueue() } disabled={running}>處理待處理項目</button><button onClick={() => runQueue(true)} disabled={running || !items.some((item) => item.status === 'failed')}>重試失敗項目</button>{running && <><button onClick={() => { stopAfterCurrentRef.current = true; }}>目前完成後停止</button><button onClick={() => { void cancelCurrentTask(); }} disabled={cancelCurrent.current}>取消目前並繼續</button></>}<button onClick={downloadAll} disabled={!items.some((item) => item.status === 'success')}>全部依序下載</button></div>
       <div className="batch-queue">{items.map((item, index) => <article className={`queue-item ${item.status}`} key={item.id} draggable={!running} onDragStart={() => setDraggedId(item.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedId) moveItem(draggedId, item.id); setDraggedId(null); }}>
-        <div className="queue-head"><strong>{index + 1}. {item.file.name}</strong>{item.duplicate && <em>重複來源</em>}<span className="status">{label(item.status)}</span></div>
+        <div className="queue-head"><strong>{index + 1}. {item.file.name}</strong>{item.duplicate && <em>重複來源</em>}{item.retryAttempt && <em className="retry">自動重試 {item.retryAttempt}/1</em>}<span className="status">{label(item.status)}</span></div>
         {item.meta.width && <p>{item.meta.width} × {item.meta.height} · {normalizeAspect(item.meta.width, item.meta.height)}{item.meta.duration ? ` · ${item.meta.duration.toFixed(1)} 秒` : ''}</p>}
         <MediaPreview blob={item.file} type={type} label="原始檔案預覽" />
         {item.status === 'processing' && <progress max="100" value={item.progress} />}{item.error && <p className="error">{item.error}</p>}
         {(item.status === 'pending' || item.status === 'failed') && <details><summary>單檔覆寫{changedFields(base, item.overrides).length ? `（${changedFields(base, item.overrides).length} 項）` : ''}</summary><Settings settings={effective(item)} type={type} onChange={(key, value) => override(item, key, value)} overridden={item.overrides} onReset={(key) => resetField(item, key)} /><button className="text-button" onClick={() => resetItem(item)}>重設此檔案所有覆寫</button></details>}
-        {item.result && <div className="result"><span>{item.result.dimensions.width} × {item.result.dimensions.height} · {(item.result.blob.size / 1024 ** 2).toFixed(2)} MB</span>{item.result.overTarget && <span className="warn">已重試 2 次，保留最接近目標的結果。</span>}<MediaPreview blob={item.result.blob} type={type} label="壓縮後預覽" /><button onClick={() => download(item)}>下載 / 重新命名</button></div>}
+        {item.result && <div className="result"><span>{item.result.dimensions.width} × {item.result.dimensions.height} · {(item.result.blob.size / 1024 ** 2).toFixed(2)} MB</span>{item.result.overTarget && <span className="warn">{item.retryAttempt ? '超過目標，已達自動重試上限。' : type === 'video' ? '超過目標，已加入自動重試 1/1。' : '超過目標容量。'}</span>}<MediaPreview blob={item.result.blob} type={type} label="壓縮後預覽" /><button onClick={() => download(item)}>下載 / 重新命名</button></div>}
         {!running && item.status !== 'processing' && <div className="reorder"><button onClick={() => reorder(index, -1)} disabled={!index}>↑</button><button onClick={() => reorder(index, 1)} disabled={index === items.length - 1}>↓</button><button onClick={() => setItems((previous) => previous.filter((candidate) => candidate.id !== item.id))}>移除</button></div>}
       </article>)}</div>
     </>}
   </div>;
 }
 
-function label(status) { return ({ pending: '等待中', processing: '處理中', success: '完成', failed: '失敗', blocked: '已阻擋', cancelled: '已取消' })[status] || status; }
+function label(status) { return ({ pending: '等待中', processing: '處理中', cancelling: '取消中', success: '完成', failed: '失敗', blocked: '已阻擋', cancelled: '已取消' })[status] || status; }
 function advancedSummary(settings, type) {
   const values = [`長邊 ${settings.longEdge}px`, settings.fit === 'original' ? '原始比例' : settings.fit === 'cover' ? '裁切填滿' : '完整顯示'];
   if (type === 'video') values.push(settings.fps === 'original' ? '原始 FPS' : `${settings.fps} FPS`, settings.stripAudio ? '移除音訊' : '保留音訊');

@@ -140,6 +140,7 @@ code {
 .queue-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-head em, .status { font-size: 11px; border-radius: 999px; padding: 3px 7px; white-space: nowrap; }
 .queue-head em { background: #fff3cd; color: #765b00; font-style: normal; }.status { margin-left: auto; background: var(--apple-report-bg); }
+.queue-head em.retry { background: rgba(0, 102, 204, .12); color: var(--apple-primary); }
 .queue-item p { margin: 7px 0; color: var(--apple-ink-secondary); font-size: 13px; }.queue-item .error { color: #d70015; }.warn { color: #b78103; font-size: 12px; }
 .queue-item progress { width: 100%; accent-color: var(--apple-primary); }.queue-item details { margin-top: 10px; }.queue-item summary { cursor: pointer; color: var(--apple-primary); font-size: 13px; margin-bottom: 10px; }.queue-item details .settings-grid { padding: 10px; background: var(--apple-report-bg); border-radius: 8px; }
 .result, .reorder { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }.reorder { justify-content: flex-end; }.reorder button:last-child { border-color: #d70015; color: #d70015; }
