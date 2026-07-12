@@ -111,8 +111,18 @@ jobs:
         run: |
           choco install nsis --yes --no-progress --limit-output
           if ($LASTEXITCODE -ne 0) { throw 'Failed to install NSIS.' }
-          $makensis = Get-Command makensis.exe -ErrorAction Stop
-          "executable=$($makensis.Source)" >> $env:GITHUB_OUTPUT
+          $knownPaths = @(
+            'C:\Program Files (x86)\NSIS\makensis.exe',
+            'C:\Program Files\NSIS\makensis.exe',
+            (Join-Path $env:ChocolateyInstall 'lib\nsis\tools\makensis.exe')
+          )
+          $makensis = $knownPaths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if ($null -eq $makensis -and -not [string]::IsNullOrWhiteSpace($env:ChocolateyInstall)) {
+            $makensis = Get-ChildItem -Path (Join-Path $env:ChocolateyInstall 'lib\nsis') -Filter makensis.exe -File -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName -First 1
+          }
+          if ([string]::IsNullOrWhiteSpace($makensis)) { throw 'NSIS was installed, but makensis.exe could not be located.' }
+          "executable=$makensis" >> $env:GITHUB_OUTPUT
 
       - name: Build Tauri setup and portable executables
         shell: pwsh
