@@ -110,6 +110,7 @@ jobs:
         run: |
           Push-Location media-compressor
           npm run tauri:build
+          if ($LASTEXITCODE -ne 0) { throw 'Tauri build failed.' }
           Pop-Location
           $version = '${{ steps.version.outputs.version }}'
           $setup = Get-ChildItem media-compressor/src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
