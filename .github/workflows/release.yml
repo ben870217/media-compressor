@@ -1,0 +1,91 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Validate release tag and package version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Only stable vX.Y.Z tags are supported: $tag" }
+          $version = (Get-Content media-compressor/package.json -Raw | ConvertFrom-Json).version
+          if ($tag.Substring(1) -ne $version) { throw "Tag $tag does not match package version $version" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Extract release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $lines = Get-Content CHANGELOG.md
+          $heading = "## [$version] - "
+          $start = -1
+          for ($index = 0; $index -lt $lines.Count; $index++) {
+            if ($lines[$index].StartsWith($heading)) { $start = $index + 1; break }
+          }
+          if ($start -lt 0) { throw "CHANGELOG.md has no release section for $version" }
+          $notes = New-Object System.Collections.Generic.List[string]
+          for ($index = $start; $index -lt $lines.Count; $index++) {
+            if ($lines[$index] -match '^## ') { break }
+            $notes.Add($lines[$index])
+          }
+          if (($notes -join "`n").Trim().Length -eq 0) { throw "CHANGELOG.md release section for $version is empty" }
+          [System.IO.File]::WriteAllLines((Join-Path $PWD 'release-notes.md'), $notes)
+
+      - name: Ensure release does not already exist
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view '${{ github.ref_name }}' 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'A Release already exists for this tag and must not be overwritten.' }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: media-compressor/package-lock.json
+
+      - name: Install, lint, and build
+        working-directory: media-compressor
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: offline-launcher/go.mod
+
+      - name: Build Windows offline package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package/www | Out-Null
+          Copy-Item -Path media-compressor/dist/* -Destination package/www -Recurse
+          go build -o package/MediaCompressor.exe ./offline-launcher
+          $archive = "MediaCompressor-${{ github.ref_name }}-windows-x64.zip"
+          Compress-Archive -Path package/* -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          "$hash  $archive" | Set-Content "$archive.sha256" -NoNewline
+
+      - name: Create immutable GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive = "MediaCompressor-${{ github.ref_name }}-windows-x64.zip"
+          gh release create '${{ github.ref_name }}' --title '${{ github.ref_name }}' --notes-file release-notes.md $archive "$archive.sha256"

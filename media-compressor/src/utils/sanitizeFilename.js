@@ -17,13 +17,14 @@ export function sanitizeFilename(input) {
   // < (小於 - 串流導向)
   // > (大於 - 串流導向)
   // | (管線 - 核心管道)
-  const forbiddenCharsRegex = /[\/\\:\*\?"<>\|]/g;
+  const forbiddenCharsRegex = /[/\\:*?"<>|]/g;
 
   // 2. 執行即時替換，將所有禁忌字元強制轉為底線 '_'
   let sanitized = input.replace(forbiddenCharsRegex, '_');
 
   // 3. 進階防禦：移除不可見的系統控制字元 (ASCII 0-31 以及 127)
   // 這些字元如果存在於檔名中，會導致 Windows 檔案總管或 Mac Finder 發生預期外的損毀
+  // eslint-disable-next-line no-control-regex -- control characters are intentionally removed from filenames.
   const controlCharsRegex = /[\x00-\x1F\x7F]/g;
   sanitized = sanitized.replace(controlCharsRegex, '');
 

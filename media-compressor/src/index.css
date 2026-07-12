@@ -119,6 +119,10 @@ code {
 .batch-drop input { display: block; max-width: 100%; margin: 0 auto; }
 .batch-settings { padding: 18px; background: var(--apple-report-bg); border-radius: 14px; border: 1px solid var(--apple-hairline); }
 .batch-settings h3 { margin: 0 0 12px; font-size: 16px; }
+.advanced-settings { margin-top: 14px; }
+.advanced-settings summary { cursor: pointer; color: var(--apple-primary); font-size: 14px; }
+.advanced-settings summary span { color: var(--apple-ink-secondary); font-size: 12px; }
+.advanced-settings .settings-grid { margin-top: 12px; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .settings-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
 .settings-grid input:not([type="checkbox"]), .settings-grid select { width: 100%; min-height: 36px; box-sizing: border-box; border: 1px solid var(--apple-hairline); border-radius: 7px; padding: 6px 8px; color: var(--apple-ink); background: var(--apple-select-bg); }
@@ -139,4 +143,7 @@ code {
 .queue-item p { margin: 7px 0; color: var(--apple-ink-secondary); font-size: 13px; }.queue-item .error { color: #d70015; }.warn { color: #b78103; font-size: 12px; }
 .queue-item progress { width: 100%; accent-color: var(--apple-primary); }.queue-item details { margin-top: 10px; }.queue-item summary { cursor: pointer; color: var(--apple-primary); font-size: 13px; margin-bottom: 10px; }.queue-item details .settings-grid { padding: 10px; background: var(--apple-report-bg); border-radius: 8px; }
 .result, .reorder { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }.reorder { justify-content: flex-end; }.reorder button:last-child { border-color: #d70015; color: #d70015; }
+.media-preview { margin-top: 10px; width: 100%; }
+.media-preview button { margin-bottom: 8px; }
+.media-preview video, .media-preview img { display: block; width: min(100%, 480px); max-height: 320px; object-fit: contain; border: 1px solid var(--apple-hairline); border-radius: 8px; background: #000; }
 @media (max-width: 600px) { .queue-actions span { width: 100%; }.queue-actions button { flex: 1; }.batch-workspace { width: 100%; } }

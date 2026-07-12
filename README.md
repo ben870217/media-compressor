@@ -139,6 +139,33 @@ npm run build
 
 正式檔案會輸出至 `media-compressor/dist/`。目前 Vite 的 `base` 設為 `/media-compressor/`，可直接部署到同名路徑的 GitHub Pages；若部署到自訂網域根目錄或其他子路徑，請同步調整 `vite.config.js` 的 `base`。
 
+## Windows 離線版
+
+正式 GitHub Release 提供 Windows 可攜 ZIP，供已安裝 Google Chrome 的使用者無網路使用。使用方式如下：
+
+1. 從 Release 下載 ZIP 並完整解壓縮。
+2. 雙擊套件內的啟動器 EXE。
+3. 啟動器會在電腦本機啟動網站並自動以 Chrome 開啟；媒體不會上傳到網路。
+
+Chrome 開啟後，請保留啟動器顯示的命令視窗；使用完畢關閉該視窗，即可停止本機服務。
+
+離線版由 Go 啟動器與建置後的前端檔案組成。維護者發布時，GitHub Actions 會建置前端、編譯啟動器、組成 ZIP，並將它附加於對應的 GitHub Release。
+
+初期啟動器不會進行 Windows 程式碼簽章，首次執行可能出現 SmartScreen 提示。請只從本專案的官方 GitHub Release 下載，並使用同一 Release 附帶的 SHA-256 checksum 驗證 ZIP 完整性。
+
+## 版本與發布
+
+版本採用 [Semantic Versioning](https://semver.org/lang/zh-TW/)，唯一版本來源是 `media-compressor/package.json`。Git tag 必須與版本完全一致並加上 `v` 前綴，例如 `0.1.0` 對應 `v0.1.0`。
+
+變更紀錄寫在根目錄 [`CHANGELOG.md`](CHANGELOG.md)，格式與分類規則見 [`docs/CHANGELOG_FORMAT.md`](docs/CHANGELOG_FORMAT.md)。發布新版本時：
+
+1. 決定下一個 SemVer 版本並更新 `media-compressor/package.json` 與 `package-lock.json`。
+2. 將 `CHANGELOG.md` 的 `Unreleased` 項目移至新的 `## [X.Y.Z] - YYYY-MM-DD` 段落。
+3. 提交版本與 CHANGELOG 變更並推送至 `main`。
+4. 在相同 commit 建立並推送正式 tag：`git tag vX.Y.Z`、`git push origin vX.Y.Z`。
+
+tag workflow 只接受正式 `vX.Y.Z`，並依序執行 `npm ci`、lint、build、版本比對與 CHANGELOG 擷取；通過後建立不可覆寫的 GitHub Release，並附加 Windows ZIP 及其 SHA-256 checksum。預發布 tag（例如 `v0.2.0-beta.1`）不受支援。
+
 ## 隱私與資料保存
 
 - 媒體內容只在目前瀏覽器分頁中解碼與編碼，應用程式本身沒有上傳媒體的後端服務。

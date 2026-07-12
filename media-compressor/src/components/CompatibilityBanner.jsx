@@ -1,27 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 
 export default function CompatibilityBanner() {
-  // 預設為相容 (true)，偵測不通過時才改為 false
-  const [isCompatible, setIsCompatible] = useState(true);
-  const [missingFeatures, setMissingFeatures] = useState([]);
-
-  useEffect(() => {
-    // 進行核心特徵偵測 (Feature Detection)
+  const missingFeatures = useMemo(() => {
     const hasWebCodecs = 'VideoEncoder' in window;
     const hasOffscreenCanvas = 'OffscreenCanvas' in window;
-
     const missing = [];
     if (!hasWebCodecs) missing.push('WebCodecs (影片硬體加速)');
     if (!hasOffscreenCanvas) missing.push('OffscreenCanvas (照片背景轉碼)');
-
-    if (missing.length > 0) {
-      setIsCompatible(false);
-      setMissingFeatures(missing);
-    }
+    return missing;
   }, []);
 
   // 如果瀏覽器完全相容，元件不渲染任何東西 (優雅墜毀原則)
-  if (isCompatible) return null;
+  if (missingFeatures.length === 0) return null;
 
   return (
     <div className="apple-compat-banner">

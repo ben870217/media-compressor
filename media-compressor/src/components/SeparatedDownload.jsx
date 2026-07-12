@@ -1,15 +1,9 @@
 // src/components/SeparatedDownload.jsx
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 export default function SeparatedDownload({ blob, defaultName, extension, onDownloadComplete }) {
-  const [filename, setFilename] = useState('');
-
-  useEffect(() => {
-    if (defaultName) {
-      setFilename(sanitizeFilename(defaultName));
-    }
-  }, [defaultName]);
+  const [filename, setFilename] = useState(() => sanitizeFilename(defaultName || ''));
 
   const handleFilenameChange = (e) => {
     const inputValue = e.target.value;
