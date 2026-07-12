@@ -105,6 +105,15 @@ jobs:
           Invoke-WebRequest -Uri $env:WEBVIEW2_FIXED_RUNTIME_URL -OutFile webview2-fixed-runtime.cab
           expand webview2-fixed-runtime.cab -F:* media-compressor/src-tauri/WebView2FixedRuntime
 
+      - name: Install NSIS
+        id: nsis
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress --limit-output
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to install NSIS.' }
+          $makensis = Get-Command makensis.exe -ErrorAction Stop
+          "executable=$($makensis.Source)" >> $env:GITHUB_OUTPUT
+
       - name: Build Tauri setup and portable executables
         shell: pwsh
         run: |
@@ -122,7 +131,8 @@ jobs:
           Get-ChildItem media-compressor/src-tauri/target/release -Filter WebView2Loader.dll -ErrorAction SilentlyContinue | Copy-Item -Destination portable-package/payload
           Copy-Item scripts/build-portable-nsis.nsi portable-package/build-portable-nsis.nsi
           Push-Location portable-package
-          & makensis build-portable-nsis.nsi
+          & '${{ steps.nsis.outputs.executable }}' build-portable-nsis.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to build the portable NSIS executable.' }
           Pop-Location
           Copy-Item portable-package/MediaCompressor-Portable.exe "MediaCompressor-v$version-Portable-x64.exe"
 
