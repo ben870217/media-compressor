@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import CompatibilityBanner from './components/CompatibilityBanner';
 import VideoCompressor from './components/VideoCompressor';
 import ImageCompressor from './components/ImageCompressor';
@@ -33,14 +33,14 @@ export default function App() {
       const updated = [record, ...prev].slice(0, 50); // 最多保留 50 筆
       try {
         localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
-      } catch {}
+      } catch { /* localStorage may be unavailable */ }
       return updated;
     });
   }, []);
 
   const handleHistoryClear = useCallback(() => {
     setHistory([]);
-    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+    try { localStorage.removeItem(HISTORY_KEY); } catch { /* localStorage may be unavailable */ }
   }, []);
 
   const cycleTheme = () => {
