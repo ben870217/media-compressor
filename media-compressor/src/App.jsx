@@ -3,12 +3,15 @@ import CompatibilityBanner from './components/CompatibilityBanner';
 import VideoCompressor from './components/VideoCompressor';
 import ImageCompressor from './components/ImageCompressor';
 import HistoryDashboard from './components/HistoryDashboard';
+import ReleaseCatalog from './components/ReleaseCatalog';
 
 const HISTORY_KEY = 'media_compressor_history';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('video');
+  const [activeView, setActiveView] = useState('compress');
   const [themeMode, setThemeMode] = useState('auto'); // 'auto' | 'light' | 'dark'
+  const [installPrompt, setInstallPrompt] = useState(null);
   const [history, setHistory] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
@@ -26,6 +29,20 @@ export default function App() {
       root.setAttribute('data-theme', themeMode);
     }
   }, [themeMode]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const handleInstalled = () => setInstallPrompt(null);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
 
   // 壓縮完成回呼 — 寫入 localStorage
   const handleCompressComplete = useCallback((record) => {
@@ -45,6 +62,13 @@ export default function App() {
 
   const cycleTheme = () => {
     setThemeMode(m => m === 'auto' ? 'dark' : m === 'dark' ? 'light' : 'auto');
+  };
+
+  const installApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
   };
 
   const themeIcon = themeMode === 'dark' ? '🌙' : themeMode === 'light' ? '☀️' : '🌗';
@@ -528,6 +552,15 @@ export default function App() {
         <h1 className="apple-sub-title">Compressor</h1>
 
         <div className="apple-tabs-container">
+          <span className="app-version-badge">v{import.meta.env.VITE_APP_VERSION} · {import.meta.env.VITE_RELEASE_CHANNEL}</span>
+          <button className="catalog-nav" type="button" onClick={() => setActiveView(activeView === 'catalog' ? 'compress' : 'catalog')}>
+            版本與下載
+          </button>
+          {installPrompt && (
+            <button onClick={installApp} className="app-install-button" type="button">
+              安裝應用程式
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('video')}
             className={`apple-tab-chip ${activeTab === 'video' ? 'active' : ''}`}
@@ -552,6 +585,7 @@ export default function App() {
       </header>
 
       {/* 主工作展區 */}
+      {activeView === 'catalog' ? <ReleaseCatalog onBack={() => setActiveView('compress')} /> : <>
       <main className="apple-main-gallery">
         <h2 className="apple-gallery-title">讓視覺，回歸純粹。</h2>
         <p className="apple-gallery-desc">
@@ -566,6 +600,7 @@ export default function App() {
 
       {/* 歷程紀錄面板 */}
       <HistoryDashboard history={history} onClear={handleHistoryClear} />
+      </>}
 
       {/* 規格資訊頁尾 */}
       <footer className="apple-footer">

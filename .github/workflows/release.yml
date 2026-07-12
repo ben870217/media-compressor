@@ -59,33 +59,66 @@ jobs:
           cache: npm
           cache-dependency-path: media-compressor/package-lock.json
 
-      - name: Install, lint, and build
+      - name: Install and lint
         working-directory: media-compressor
         run: |
           npm ci
           npm run lint
-          npm run build
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: offline-launcher/go.mod
-
-      - name: Build Windows offline package
+      - name: Build versioned PWA archive
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path package/www | Out-Null
-          Copy-Item -Path media-compressor/dist/* -Destination package/www -Recurse
-          go build -o package/MediaCompressor.exe ./offline-launcher
-          $archive = "MediaCompressor-${{ github.ref_name }}-windows-x64.zip"
-          Compress-Archive -Path package/* -DestinationPath $archive
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
-          "$hash  $archive" | Set-Content "$archive.sha256" -NoNewline
+          $version = '${{ steps.version.outputs.version }}'
+          $env:VITE_RELEASE_VERSION = $version
+          $env:VITE_BASE_PATH = "/media-compressor/releases/v$version/"
+          Push-Location media-compressor
+          npm run build
+          Pop-Location
+          Compress-Archive -Path media-compressor/dist/* -DestinationPath "MediaCompressor-v$version-PWA.zip"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Prepare fixed WebView2 runtime
+        shell: pwsh
+        env:
+          WEBVIEW2_FIXED_RUNTIME_URL: ${{ vars.WEBVIEW2_FIXED_RUNTIME_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WEBVIEW2_FIXED_RUNTIME_URL)) { throw 'Set WEBVIEW2_FIXED_RUNTIME_URL to a pinned Microsoft fixed-runtime CAB URL.' }
+          New-Item -ItemType Directory -Force -Path media-compressor/src-tauri/WebView2FixedRuntime | Out-Null
+          Invoke-WebRequest -Uri $env:WEBVIEW2_FIXED_RUNTIME_URL -OutFile webview2-fixed-runtime.cab
+          expand webview2-fixed-runtime.cab -F:* media-compressor/src-tauri/WebView2FixedRuntime
+
+      - name: Build Tauri setup and portable executables
+        shell: pwsh
+        run: |
+          Push-Location media-compressor
+          npm run tauri:build
+          Pop-Location
+          $version = '${{ steps.version.outputs.version }}'
+          $setup = Get-ChildItem media-compressor/src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
+          if ($null -eq $setup) { throw 'Tauri did not produce an NSIS setup executable.' }
+          Copy-Item $setup.FullName "MediaCompressor-v$version-Setup-x64.exe"
+          New-Item -ItemType Directory -Force -Path portable-package/payload | Out-Null
+          Copy-Item media-compressor/src-tauri/target/release/media-compressor.exe portable-package/payload/MediaCompressor.exe
+          Copy-Item media-compressor/src-tauri/WebView2FixedRuntime portable-package/payload/WebView2FixedRuntime -Recurse
+          Get-ChildItem media-compressor/src-tauri/target/release -Filter WebView2Loader.dll -ErrorAction SilentlyContinue | Copy-Item -Destination portable-package/payload
+          Copy-Item scripts/build-portable-nsis.nsi portable-package/build-portable-nsis.nsi
+          Push-Location portable-package
+          & makensis build-portable-nsis.nsi
+          Pop-Location
+          Copy-Item portable-package/MediaCompressor-Portable.exe "MediaCompressor-v$version-Portable-x64.exe"
+
+      - name: Create SHA-256 checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Filter 'MediaCompressor-*.exe' | ForEach-Object { $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(); "$hash  $($_.Name)" | Set-Content "$($_.Name).sha256" -NoNewline }
 
       - name: Create immutable GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $archive = "MediaCompressor-${{ github.ref_name }}-windows-x64.zip"
-          gh release create '${{ github.ref_name }}' --title '${{ github.ref_name }}' --notes-file release-notes.md $archive "$archive.sha256"
+          gh release create '${{ github.ref_name }}' --title '${{ github.ref_name }}' --notes-file release-notes.md MediaCompressor-*.exe MediaCompressor-*.exe.sha256 MediaCompressor-*-PWA.zip

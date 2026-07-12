@@ -1,3 +1,15 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-app-primary: var(--apple-primary);
+  --color-app-surface: var(--apple-canvas);
+  --color-app-ink: var(--apple-ink);
+  --font-app-display: var(--apple-font-display);
+  --font-app-text: var(--apple-font-text);
+  --breakpoint-tablet: 45.9375rem;
+  --breakpoint-mobile: 30rem;
+}
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -53,6 +65,33 @@
 body {
   margin: 0;
 }
+
+@layer components {
+  .app-install-button {
+    @apply inline-flex min-h-7 items-center rounded-full border border-app-primary bg-transparent px-2.5 py-1 text-xs font-medium text-app-primary transition-colors hover:bg-app-primary hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-primary;
+  }
+}
+
+.app-version-badge, .catalog-nav, .catalog-back {
+  border: 1px solid var(--apple-hairline);
+  border-radius: 9999px;
+  background: var(--apple-canvas);
+  color: var(--apple-ink-secondary);
+  font-size: 12px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+.catalog-nav, .catalog-back { cursor: pointer; color: var(--apple-primary); }
+.catalog-back { align-self: flex-start; margin-bottom: 24px; }
+.release-catalog { align-items: stretch; }
+.release-list { display: grid; gap: 14px; width: 100%; max-width: 780px; }
+.release-card { display: flex; justify-content: space-between; gap: 24px; padding: 20px; border: 1px solid var(--apple-hairline); border-radius: 16px; background: var(--apple-file-card-bg); text-align: left; }
+.release-card h3, .release-card p { margin: 0 0 8px; color: var(--apple-ink); }
+.release-card p { color: var(--apple-ink-secondary); font-size: 14px; }
+.release-actions { display: flex; flex-direction: column; gap: 8px; min-width: 180px; }
+.release-actions a { color: var(--apple-primary); font-size: 14px; }
+.release-actions .release-install { display: inline-flex; justify-content: center; border-radius: 999px; background: var(--apple-primary); color: #fff; padding: 8px 12px; text-decoration: none; }
+@media (max-width: 735px) { .release-card { flex-direction: column; }.release-actions { min-width: 0; }.app-version-badge { display: none; } }
 
 #root {
   width: 1126px;
