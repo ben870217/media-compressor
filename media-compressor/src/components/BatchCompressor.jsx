@@ -210,7 +210,14 @@ export default function BatchCompressor({ type, onCompressComplete }) {
   return <div className="batch-workspace">
     <h2>{type === 'video' ? '🎥 影片批次壓縮' : '📸 相片批次壓縮'}</h2>
     <p className="batch-subtitle">每批最多 50 個；依序處理。相同來源會保留並標示重複。</p>
-    <label className="batch-drop"><input type="file" multiple accept={type === 'video' ? '.mp4,.mov,.mkv,.webm' : 'image/jpeg,image/png,image/webp,image/gif'} onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />加入 {type === 'video' ? '影片' : '相片'}檔案</label>
+    <label className="batch-drop">
+      <input className="batch-file-input" type="file" multiple accept={type === 'video' ? '.mp4,.mov,.mkv,.webm' : 'image/jpeg,image/png,image/webp,image/gif'} onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
+      <span className="batch-file-picker">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3.25A2.25 2.25 0 0 0 7.25 20h9.5A2.25 2.25 0 0 0 19 17.75V14.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        選擇{type === 'video' ? '影片' : '相片'}檔案
+      </span>
+      <span className="batch-file-hint">或將檔案拖放到這裡（最多 50 個）</span>
+    </label>
     {notice && <p className="batch-notice">{notice}</p>}
     <section className="batch-settings"><h3>批次共用設定</h3><Settings settings={activeSettings} type={type} onChange={updateBase} fields="primary" /><details className="advanced-settings"><summary>進階設定 <span>{advancedSummary(activeSettings, type)}</span></summary><Settings settings={activeSettings} type={type} onChange={updateBase} fields="advanced" /></details></section>
     {items.length > 0 && <>
