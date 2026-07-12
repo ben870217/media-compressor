@@ -49,8 +49,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view '${{ github.ref_name }}' 2>$null
-          if ($LASTEXITCODE -eq 0) { throw 'A Release already exists for this tag and must not be overwritten.' }
+          $tag = '${{ github.ref_name }}'
+          $releaseViewOutput = gh release view $tag 2>&1
+          $exitCode = $LASTEXITCODE
+
+          if ($exitCode -eq 0) {
+            throw 'A Release already exists for this tag and must not be overwritten.'
+          }
+
+          $errorText = $releaseViewOutput -join "`n"
+          if ($errorText -notmatch '(?i)(release not found|HTTP 404)') {
+            throw "Could not verify whether a Release exists for $tag. gh output: $errorText"
+          }
+
+          # `gh release view` returns exit code 1 when the tag has no Release yet.
+          # This is expected here; explicitly clear it so pwsh finishes successfully.
+          exit 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
