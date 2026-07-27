@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Conversion, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat } from 'mediabunny';
-import { ASPECT_OPTIONS, changedFields, defaultSettings, isAnimatedImage, mergedSettings, normalizeAspect, outputDimensions } from '../utils/mediaSettings';
+import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, isAnimatedImage, mergedSettings, normalizeAspect, outputDimensions } from '../utils/mediaSettings';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 const MAX_FILES = 50;
@@ -77,7 +77,9 @@ export default function BatchCompressor({ type, onCompressComplete }) {
         if (file.size > 2 * 1024 ** 3) throw new Error('檔案超過 2GB 瀏覽器處理限制。');
         const meta = type === 'image' ? await imageMeta(file) : await videoMeta(file);
         const duplicate = items.some((item) => item.file.name === file.name && item.file.size === file.size) || accepted.filter((candidate) => candidate === file || (candidate.name === file.name && candidate.size === file.size)).indexOf(file) > 0;
-        return { id, file, meta, status: 'pending', progress: 0, overrides: {}, duplicate, result: null, error: '' };
+        // 自動判定影片來源類型（手機錄影 / 電腦螢幕錄影）
+        const detectedSourceType = type === 'video' ? detectVideoSourceType(meta) : undefined;
+        return { id, file, meta, status: 'pending', progress: 0, overrides: {}, duplicate, result: null, error: '', detectedSourceType };
       } catch (error) { return { id, file, meta: {}, status: 'blocked', progress: 0, overrides: {}, error: error.message, duplicate: false }; }
     }));
     setItems((previous) => [...previous, ...newItems]);
@@ -88,7 +90,18 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     itemsRef.current = next;
     return next;
   });
-  const effective = (item) => mergedSettings(base, item.overrides);
+
+  const effective = (item) => {
+    const merged = mergedSettings(base, item.overrides);
+    // 若為影片且 sourceType 為 'screen'，且使用者尚未覆寫 longEdge/fps，
+    // 則自動套用螢幕錄影品質保護預設：維持原始解析度、優先降低影格率至 30 FPS。
+    if (type === 'video' && merged.sourceType === 'screen') {
+      if (!('longEdge' in item.overrides)) merged.longEdge = 'original';
+      if (!('fps' in item.overrides)) merged.fps = '30';
+    }
+    return merged;
+  };
+
   const updateBase = (key, value) => setBase((previous) => ({ ...previous, [key]: value }));
   const override = (item, key, value) => updateItem(item.id, { overrides: { ...item.overrides, [key]: value } });
   const resetField = (item, key) => { const next = { ...item.overrides }; delete next[key]; updateItem(item.id, { overrides: next }); };
@@ -207,9 +220,42 @@ export default function BatchCompressor({ type, onCompressComplete }) {
   const downloadAll = () => { setNotice('瀏覽器可能要求允許多重下載。'); items.filter((item) => item.status === 'success').forEach((item, index) => setTimeout(() => download(item), index * 250)); };
   const activeSettings = useMemo(() => ({ ...base }), [base]);
 
+  // 全域來源類型切換（同步更新 base.sourceType）
+  const updateBaseSourceType = (value) => {
+    setBase((previous) => ({ ...previous, sourceType: value }));
+  };
+
   return <div className="batch-workspace">
     <h2>{type === 'video' ? '🎥 影片批次壓縮' : '📸 相片批次壓縮'}</h2>
     <p className="batch-subtitle">每批最多 50 個；依序處理。相同來源會保留並標示重複。</p>
+    {type === 'video' && (
+      <div className="source-type-switcher">
+        <span className="source-type-label">影片來源類型</span>
+        <div className="source-type-chips">
+          <button
+            type="button"
+            id="source-type-mobile"
+            className={`source-chip ${base.sourceType === 'mobile' ? 'active' : ''}`}
+            onClick={() => updateBaseSourceType('mobile')}
+          >
+            📱 手機錄影
+          </button>
+          <button
+            type="button"
+            id="source-type-screen"
+            className={`source-chip ${base.sourceType === 'screen' ? 'active' : ''}`}
+            onClick={() => updateBaseSourceType('screen')}
+          >
+            💻 電腦螢幕錄影
+          </button>
+        </div>
+        <span className="source-type-hint">
+          {base.sourceType === 'screen'
+            ? '螢幕錄影模式：預設維持原始解析度 + 30 FPS，保護文字清晰度。'
+            : '手機錄影模式：依目標容量自動調整解析度與位元率。'}
+        </span>
+      </div>
+    )}
     <label className="batch-drop">
       <input className="batch-file-input" type="file" multiple accept={type === 'video' ? '.mp4,.mov,.mkv,.webm' : 'image/jpeg,image/png,image/webp,image/gif'} onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
       <span className="batch-file-picker">
@@ -224,6 +270,31 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       <div className="queue-actions"><span>{items.length}/50 個檔案</span><button onClick={() => runQueue() } disabled={running}>處理待處理項目</button><button onClick={() => runQueue(true)} disabled={running || !items.some((item) => item.status === 'failed')}>重試失敗項目</button>{running && <><button onClick={() => { stopAfterCurrentRef.current = true; }}>目前完成後停止</button><button onClick={() => { void cancelCurrentTask(); }} disabled={cancelCurrent.current}>取消目前並繼續</button></>}<button onClick={downloadAll} disabled={!items.some((item) => item.status === 'success')}>全部依序下載</button></div>
       <div className="batch-queue">{items.map((item, index) => <article className={`queue-item ${item.status}`} key={item.id} draggable={!running} onDragStart={() => setDraggedId(item.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedId) moveItem(draggedId, item.id); setDraggedId(null); }}>
         <div className="queue-head"><strong>{index + 1}. {item.file.name}</strong>{item.duplicate && <em>重複來源</em>}{item.retryAttempt && <em className="retry">自動重試 {item.retryAttempt}/1</em>}<span className="status">{label(item.status)}</span></div>
+        {type === 'video' && item.detectedSourceType && (
+          <div className="source-type-badge-row">
+            <span className={`source-type-item-badge ${item.detectedSourceType}`}>
+              {item.detectedSourceType === 'screen' ? '💻 系統偵測：電腦螢幕錄影' : '📱 系統偵測：手機錄影'}
+            </span>
+            {!('sourceType' in item.overrides) && item.detectedSourceType !== base.sourceType && (
+              <button
+                type="button"
+                className="source-type-override-btn"
+                onClick={() => override(item, 'sourceType', item.detectedSourceType)}
+              >
+                ✨ 套用系統建議
+              </button>
+            )}
+            {'sourceType' in item.overrides && (
+              <button
+                type="button"
+                className="source-type-override-btn secondary"
+                onClick={() => resetField(item, 'sourceType')}
+              >
+                重設來源類型
+              </button>
+            )}
+          </div>
+        )}
         {item.meta.width && <p>{item.meta.width} × {item.meta.height} · {normalizeAspect(item.meta.width, item.meta.height)}{item.meta.duration ? ` · ${item.meta.duration.toFixed(1)} 秒` : ''}</p>}
         <MediaPreview blob={item.file} type={type} label="原始檔案預覽" />
         {item.status === 'processing' && <progress max="100" value={item.progress} />}{item.error && <p className="error">{item.error}</p>}
@@ -237,7 +308,8 @@ export default function BatchCompressor({ type, onCompressComplete }) {
 
 function label(status) { return ({ pending: '等待中', processing: '處理中', cancelling: '取消中', success: '完成', failed: '失敗', blocked: '已阻擋', cancelled: '已取消' })[status] || status; }
 function advancedSummary(settings, type) {
-  const values = [`長邊 ${settings.longEdge}px`, settings.fit === 'original' ? '原始比例' : settings.fit === 'cover' ? '裁切填滿' : '完整顯示'];
+  const longEdgeLabel = settings.longEdge === 'original' ? '原始解析度' : `長邊 ${settings.longEdge}px`;
+  const values = [longEdgeLabel, settings.fit === 'original' ? '原始比例' : settings.fit === 'cover' ? '裁切填滿' : '完整顯示'];
   if (type === 'video') values.push(settings.fps === 'original' ? '原始 FPS' : `${settings.fps} FPS`, settings.stripAudio ? '移除音訊' : '保留音訊');
   return values.join(' · ');
 }
@@ -253,14 +325,18 @@ function Settings({ settings, type, onChange, overridden = {}, onReset, fields =
   const field = (key, element) => <label className={overridden[key] !== undefined ? 'overridden' : ''}>{element}{overridden[key] !== undefined && <button type="button" className="reset" onClick={() => onReset?.(key)}>使用批次預設</button>}</label>;
   const primary = fields === 'all' || fields === 'primary';
   const advanced = fields === 'all' || fields === 'advanced';
+  const isScreen = type === 'video' && settings.sourceType === 'screen';
+  // 螢幕錄影且長邊被手動調降時顯示警示
+  const showDownscaleWarning = isScreen && settings.longEdge !== 'original';
   return <div className="settings-grid">
     {primary && field('targetSize', <>目標容量（MB）<input type="number" min="0.1" step="0.1" value={settings.targetSize} onChange={(e) => onChange('targetSize', Math.max(.1, Number(e.target.value)))} /></>)}
-    {advanced && <>{field('longEdge', <>長邊上限（px）<select value={settings.longEdge} onChange={(e) => onChange('longEdge', Number(e.target.value))}><option value="3840">3840</option><option value="2048">2048</option><option value="1080">1080</option><option value="720">720</option><option value="480">480</option></select></>)}
+    {advanced && <>{field('longEdge', <>長邊上限（px）<select value={settings.longEdge} onChange={(e) => { const v = e.target.value; onChange('longEdge', v === 'original' ? 'original' : Number(v)); }}><option value="original">原始解析度（1:1 點對點）</option><option value="3840">3840</option><option value="2048">2048</option><option value="1080">1080</option><option value="720">720</option><option value="480">480</option></select></>)}
+    {showDownscaleWarning && <p className="screen-downscale-warning">⚠️ 螢幕錄影降低解析度可能導致小字與程式碼模糊，建議維持「原始解析度」。</p>}
     {field('aspect', <>輸出比例<select value={settings.aspect} onChange={(e) => onChange('aspect', e.target.value)}>{ASPECT_OPTIONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></>)}
     {settings.aspect === 'custom' && field('customAspect', <>自訂比例<input value={settings.customAspect} onChange={(e) => onChange('customAspect', e.target.value)} placeholder="例如 5:4" /></>)}
     {field('fit', <>比例處理<select value={settings.fit} onChange={(e) => onChange('fit', e.target.value)}><option value="contain">完整顯示並加留白</option><option value="cover">裁切填滿（置中）</option><option value="original">維持原始比例</option></select></>)}
     {settings.fit === 'contain' && field('background', <>留白背景<select value={settings.background} onChange={(e) => onChange('background', e.target.value)}><option value="black">黑色</option><option value="white">白色</option><option value="blur">模糊延展</option><option value="#0066cc">自訂藍色</option></select></>)}
-    {type === 'video' && <>{field('fps', <>FPS<select value={settings.fps} onChange={(e) => onChange('fps', e.target.value)}><option value="original">原始 FPS</option><option value="60">60</option><option value="30">30</option><option value="24">24</option></select></>)}{field('stripAudio', <><input type="checkbox" checked={settings.stripAudio} onChange={(e) => onChange('stripAudio', e.target.checked)} />移除音訊</>)}</>}</>}
+    {type === 'video' && <>{field('fps', <>FPS<select value={settings.fps} onChange={(e) => onChange('fps', e.target.value)}><option value="original">原始 FPS</option><option value="60">60</option><option value="30">30{isScreen ? '（螢幕錄影建議）' : ''}</option><option value="24">24</option></select></>)}{field('stripAudio', <><input type="checkbox" checked={settings.stripAudio} onChange={(e) => onChange('stripAudio', e.target.checked)} />移除音訊</>)}</> }</>}
     {primary && field('format', <>輸出格式<select value={settings.format} onChange={(e) => onChange('format', e.target.value)}>{type === 'video' ? <><option value="avc">H.264 / AVC</option><option value="hevc">H.265 / HEVC</option><option value="vp9">VP9</option><option value="av1">AV1</option></> : <><option value="image/jpeg">JPEG</option><option value="image/webp">WebP</option><option value="image/png">PNG</option></>}</select></>)}
   </div>;
 }
