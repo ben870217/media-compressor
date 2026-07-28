@@ -11,18 +11,20 @@ export const ASPECT_OPTIONS = [
  * 2. 超寬螢幕（寬高比 >= 2.0，如 21:9 / 32:9）→ 'screen'
  * 3. 16:10 顯示器比例（寬高比接近 1.6，容差 ±0.02）→ 'screen'
  * 4. 2K 以上橫向（width >= 2560px）→ 'screen'
- * 5. 其餘（一般 16:9 等）→ 'mobile'（預設，使用者可手動切換）
+ * 5. 16:9 橫向且 60 FPS（fps >= 55，如 OBS 錄影）→ 'screen'
+ * 6. 其餘（一般 16:9 等）→ 'mobile'（預設，使用者可手動切換）
  *
- * @param {{ width: number, height: number }} dimensions
+ * @param {{ width: number, height: number, fps?: number }} dimensions
  * @returns {'mobile' | 'screen'}
  */
-export function detectVideoSourceType({ width, height }) {
+export function detectVideoSourceType({ width, height, fps }) {
   if (!width || !height) return 'mobile';
   if (height > width) return 'mobile';                         // 直式：手機錄影
   const ratio = width / height;
   if (ratio >= 2.0) return 'screen';                          // 超寬螢幕 21:9 / 32:9
   if (Math.abs(ratio - 16 / 10) < 0.02) return 'screen';     // 16:10 顯示器
   if (width >= 2560) return 'screen';                         // 2K/4K 螢幕錄影
+  if (Math.abs(ratio - 16 / 9) < 0.02 && fps && fps >= 55) return 'screen'; // 16:9 60fps OBS 錄影
   return 'mobile';
 }
 
@@ -35,10 +37,11 @@ export const defaultSettings = (type) => ({
   fit: 'contain',
   background: type === 'video' ? 'black' : 'white',
   force: false,
-  ...(type === 'video' ? { stripAudio: false, fps: 'original', sourceType: 'mobile' } : {})
+  ...(type === 'video' ? { stripAudio: false, fps: 'original', sourceType: 'auto' } : {})
 });
 
-export function parseAspect(value, custom = '1:1') {
+export function parseAspect(value = 'original', custom = '1:1') {
+  if (!value) return null;
   const source = value === 'custom' ? custom : value;
   if (source === 'original') return null;
   const [width, height] = source.split(':').map(Number);
@@ -51,7 +54,7 @@ export function normalizeAspect(width, height) {
   return choices.find(([, candidate]) => Math.abs(ratio - candidate) < .015)?.[0] || 'custom';
 }
 
-export function outputDimensions({ width, height, longEdge, aspect, customAspect, even = false }) {
+export function outputDimensions({ width, height, longEdge, aspect = 'original', customAspect = '1:1', even = false }) {
   const targetRatio = parseAspect(aspect, customAspect) || width / height;
 
   // 當 longEdge 為 'original' 時（電腦螢幕錄影 1:1 點對點保護），
