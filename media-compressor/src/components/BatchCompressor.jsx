@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Conversion, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat } from 'mediabunny';
-import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, isAnimatedImage, mergedSettings, normalizeAspect, outputDimensions } from '../utils/mediaSettings';
+import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, isAnimatedImage, mergedSettings, normalizeAspect, outputDimensions, videoConversionOptions } from '../utils/mediaSettings';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 const MAX_FILES = 50;
@@ -104,14 +104,13 @@ export default function BatchCompressor({ type, onCompressComplete }) {
   });
 
   const effective = (item) => {
-    const merged = mergedSettings(base, item.overrides);
-    // 若為影片且 sourceType 為 'screen'，且使用者尚未覆寫 longEdge/fps，
-    // 則自動套用螢幕錄影品質保護預設：維持原始解析度、優先降低影格率至 30 FPS。
-    if (type === 'video' && merged.sourceType === 'screen') {
-      if (!('longEdge' in item.overrides)) merged.longEdge = 'original';
-      if (!('fps' in item.overrides)) merged.fps = '30';
+    if (type === 'video') {
+      return effectiveVideoSettings(base, item.overrides, {
+        detectedSourceType: item.detectedSourceType,
+        sourceFps: item.meta.fps,
+      });
     }
-    return merged;
+    return mergedSettings(base, item.overrides);
   };
 
   const updateBase = (key, value) => setBase((previous) => ({ ...previous, [key]: value }));
@@ -132,7 +131,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     const duration = item.meta.duration || 1;
     const audioRate = settings.stripAudio ? 0 : 128000;
     const videoRate = Math.max(150000, Math.floor(((settings.targetSize * 1024 * 1024 * 8 * .9) / duration - audioRate) * (.82 ** attempt)));
-    const conversion = await Conversion.init({ input, output, video: { codec: settings.format, bitrate: videoRate, width: dimensions.width, height: dimensions.height, fit: settings.fit === 'cover' ? 'cover' : 'contain', frameRate: settings.fps === 'original' ? undefined : Number(settings.fps) }, audio: settings.stripAudio ? { discard: true } : { codec: 'aac', bitrate: audioRate } });
+    const conversion = await Conversion.init({ input, output, video: videoConversionOptions(settings, dimensions, videoRate), audio: settings.stripAudio ? { discard: true } : { codec: 'aac', bitrate: audioRate } });
     if (!conversion.isValid) throw new Error('此瀏覽器/裝置不支援所選影片編碼。請改用 H.264 / AVC，或降低解析度後重試。');
     conversion.onProgress = (progress) => { if (currentItemRef.current?.id === item.id && !cancelCurrent.current) updateItem(item.id, { progress: Math.round(progress * 100) }); };
     currentConversionRef.current = conversion;

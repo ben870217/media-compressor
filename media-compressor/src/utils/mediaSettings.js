@@ -112,6 +112,31 @@ export function outputDimensions({ width, height, longEdge, aspect = 'original',
 
 export function mergedSettings(base, overrides = {}) { return { ...base, ...overrides }; }
 
+export function effectiveVideoSettings(base, overrides = {}, media = {}) {
+  const settings = mergedSettings(base, overrides);
+  if (settings.sourceType === 'auto' && media.detectedSourceType) {
+    settings.sourceType = media.detectedSourceType;
+  }
+  if (settings.sourceType !== 'screen') return settings;
+
+  if (!('longEdge' in overrides)) settings.longEdge = 'original';
+  if (!('fps' in overrides) && media.sourceFps >= 55) settings.fps = '30';
+  if (!('keyframeInterval' in overrides)) settings.keyframeInterval = 5;
+  return settings;
+}
+
+export function videoConversionOptions(settings, dimensions, bitrate) {
+  return {
+    codec: settings.format,
+    bitrate,
+    width: dimensions.width,
+    height: dimensions.height,
+    fit: settings.fit === 'cover' ? 'cover' : 'contain',
+    frameRate: settings.fps === 'original' ? undefined : Number(settings.fps),
+    ...(settings.keyframeInterval == null ? {} : { keyFrameInterval: settings.keyframeInterval }),
+  };
+}
+
 export function changedFields(base, overrides = {}) {
   return Object.keys(overrides).filter((key) => overrides[key] !== base[key]);
 }

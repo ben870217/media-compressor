@@ -3,7 +3,13 @@
  * Run: docker exec -w /app/media-compressor media-compressor-dev node src/utils/__tests__/mediaSettings.test.mjs
  */
 
-import { detectVideoSourceType, outputDimensions, defaultSettings } from '../mediaSettings.js';
+import {
+  defaultSettings,
+  detectVideoSourceType,
+  effectiveVideoSettings,
+  outputDimensions,
+  videoConversionOptions,
+} from '../mediaSettings.js';
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -29,6 +35,98 @@ console.log('\n-- defaultSettings --');
 test('defaultSettings("video") includes sourceType: "auto"', () => {
   const defaults = defaultSettings('video');
   eq(defaults.sourceType, 'auto');
+});
+
+console.log('\n-- effectiveVideoSettings --');
+test('screen recording defaults to original resolution, 30 FPS, and 5s GOP', () => {
+  const effective = effectiveVideoSettings(
+    { ...defaultSettings('video'), sourceType: 'screen' },
+    {},
+    { sourceFps: 60 },
+  );
+  eq(
+    {
+      longEdge: effective.longEdge,
+      fps: effective.fps,
+      keyframeInterval: effective.keyframeInterval,
+    },
+    { longEdge: 'original', fps: '30', keyframeInterval: 5 },
+  );
+});
+test('screen recording preserves explicit FPS and GOP overrides', () => {
+  const effective = effectiveVideoSettings(
+    { ...defaultSettings('video'), sourceType: 'screen' },
+    { fps: '60', keyframeInterval: 2 },
+    { sourceFps: 60 },
+  );
+  eq(
+    { fps: effective.fps, keyframeInterval: effective.keyframeInterval },
+    { fps: '60', keyframeInterval: 2 },
+  );
+});
+test('mobile recording does not receive screen recording defaults', () => {
+  const effective = effectiveVideoSettings(
+    { ...defaultSettings('video'), sourceType: 'mobile' },
+    {},
+    { sourceFps: 60 },
+  );
+  eq(
+    {
+      longEdge: effective.longEdge,
+      fps: effective.fps,
+      hasKeyframeInterval: 'keyframeInterval' in effective,
+    },
+    { longEdge: 1080, fps: 'original', hasKeyframeInterval: false },
+  );
+});
+test('auto-detected high-FPS screen recording receives screen defaults', () => {
+  const effective = effectiveVideoSettings(
+    defaultSettings('video'),
+    {},
+    { detectedSourceType: 'screen', sourceFps: 60 },
+  );
+  eq(
+    {
+      sourceType: effective.sourceType,
+      fps: effective.fps,
+      keyframeInterval: effective.keyframeInterval,
+    },
+    { sourceType: 'screen', fps: '30', keyframeInterval: 5 },
+  );
+});
+test('low-FPS screen recording keeps its original frame rate', () => {
+  const effective = effectiveVideoSettings(
+    { ...defaultSettings('video'), sourceType: 'screen' },
+    {},
+    { sourceFps: 25 },
+  );
+  eq(
+    { fps: effective.fps, keyframeInterval: effective.keyframeInterval },
+    { fps: 'original', keyframeInterval: 5 },
+  );
+});
+
+console.log('\n-- videoConversionOptions --');
+test('maps the internal GOP setting to mediabunny keyFrameInterval', () => {
+  const options = videoConversionOptions(
+    {
+      format: 'avc',
+      fit: 'contain',
+      fps: '30',
+      keyframeInterval: 5,
+    },
+    { width: 1920, height: 1080 },
+    2_000_000,
+  );
+  eq(options, {
+    codec: 'avc',
+    bitrate: 2_000_000,
+    width: 1920,
+    height: 1080,
+    fit: 'contain',
+    frameRate: 30,
+    keyFrameInterval: 5,
+  });
 });
 
 console.log('\n-- outputDimensions (longEdge: "original") --');
