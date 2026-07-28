@@ -25,6 +25,18 @@ async function videoMeta(file) {
       video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight, duration: video.duration });
       video.onerror = () => reject(new Error('Chrome 無法讀取此影片的 metadata。MOV 內的 codec（例如 HEVC 或 ProRes）可能不受目前裝置支援；請改用 H.264 來源檔，或在支援該 codec 的裝置上重試。'));
     });
+    try {
+      const input = new Input({ source: new BlobSource(file), formats: [MP4, QTFF, MATROSKA, WEBM] });
+      const track = await input.getPrimaryVideoTrack();
+      if (track) {
+        const stats = await track.computePacketStats(30);
+        if (stats?.averagePacketRate) {
+          data.fps = Math.round(stats.averagePacketRate);
+        }
+      }
+    } catch (e) {
+      console.warn('FPS estimation via mediabunny failed:', e);
+    }
     return data;
   } finally { URL.revokeObjectURL(url); }
 }
