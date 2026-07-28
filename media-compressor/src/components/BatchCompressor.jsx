@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Conversion, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat } from 'mediabunny';
-import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, isAnimatedImage, mergedSettings, normalizeAspect, outputDimensions, videoConversionOptions } from '../utils/mediaSettings';
+import { AudioSampleSink, Conversion, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat } from 'mediabunny';
+import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, isAnimatedImage, isAudioBufferSilent, mergedSettings, normalizeAspect, outputDimensions, sparseAudioSampleTimestamps, videoConversionOptions } from '../utils/mediaSettings';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 const MAX_FILES = 50;
@@ -25,8 +25,8 @@ async function videoMeta(file) {
       video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight, duration: video.duration });
       video.onerror = () => reject(new Error('Chrome 無法讀取此影片的 metadata。MOV 內的 codec（例如 HEVC 或 ProRes）可能不受目前裝置支援；請改用 H.264 來源檔，或在支援該 codec 的裝置上重試。'));
     });
+    const input = new Input({ source: new BlobSource(file), formats: [MP4, QTFF, MATROSKA, WEBM] });
     try {
-      const input = new Input({ source: new BlobSource(file), formats: [MP4, QTFF, MATROSKA, WEBM] });
       const track = await input.getPrimaryVideoTrack();
       if (track) {
         const stats = await track.computePacketStats(30);
@@ -36,6 +36,32 @@ async function videoMeta(file) {
       }
     } catch (e) {
       console.warn('FPS estimation via mediabunny failed:', e);
+    }
+    try {
+      const audioTrack = await input.getPrimaryAudioTrack();
+      data.hasAudio = Boolean(audioTrack);
+      data.isSilent = false;
+      if (audioTrack && await audioTrack.canDecode()) {
+        const sink = new AudioSampleSink(audioTrack);
+        let examinedSamples = 0;
+        data.isSilent = true;
+        for await (const sample of sink.samplesAtTimestamps(sparseAudioSampleTimestamps(data.duration))) {
+          if (!sample) continue;
+          try {
+            examinedSamples++;
+            if (!isAudioBufferSilent(sample.toAudioBuffer())) {
+              data.isSilent = false;
+              break;
+            }
+          } finally {
+            sample.close();
+          }
+        }
+        if (!examinedSamples) data.isSilent = false;
+      }
+    } catch (e) {
+      data.isSilent = false;
+      console.warn('Audio silence detection via mediabunny failed:', e);
     }
     return data;
   } finally { URL.revokeObjectURL(url); }
@@ -129,8 +155,9 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     const target = new BufferTarget();
     const output = new Output({ format: new Mp4OutputFormat(), target });
     const duration = item.meta.duration || 1;
-    const audioRate = settings.stripAudio ? 0 : 128000;
+    const audioRate = settings.stripAudio ? 0 : settings.audioBitrate;
     const videoRate = Math.max(150000, Math.floor(((settings.targetSize * 1024 * 1024 * 8 * .9) / duration - audioRate) * (.82 ** attempt)));
+    // mediabunny Conversion 1.50.7 does not expose bitrateMode; WebCodecs uses VBR by default.
     const conversion = await Conversion.init({ input, output, video: videoConversionOptions(settings, dimensions, videoRate), audio: settings.stripAudio ? { discard: true } : { codec: 'aac', bitrate: audioRate } });
     if (!conversion.isValid) throw new Error('此瀏覽器/裝置不支援所選影片編碼。請改用 H.264 / AVC，或降低解析度後重試。');
     conversion.onProgress = (progress) => { if (currentItemRef.current?.id === item.id && !cancelCurrent.current) updateItem(item.id, { progress: Math.round(progress * 100) }); };
@@ -304,6 +331,12 @@ export default function BatchCompressor({ type, onCompressComplete }) {
                 重設來源類型
               </button>
             )}
+          </div>
+        )}
+        {type === 'video' && item.meta.isSilent && !effective(item).stripAudio && (
+          <div className="source-type-badge-row">
+            <span className="source-type-item-badge">🔇 建議移除無聲音訊軌</span>
+            <button type="button" className="source-type-override-btn" onClick={() => override(item, 'stripAudio', true)}>移除音訊</button>
           </div>
         )}
         {item.meta.width && <p>{item.meta.width} × {item.meta.height} · {normalizeAspect(item.meta.width, item.meta.height)}{item.meta.duration ? ` · ${item.meta.duration.toFixed(1)} 秒` : ''}</p>}

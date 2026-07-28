@@ -7,7 +7,9 @@ import {
   defaultSettings,
   detectVideoSourceType,
   effectiveVideoSettings,
+  isAudioBufferSilent,
   outputDimensions,
+  sparseAudioSampleTimestamps,
   videoConversionOptions,
 } from '../mediaSettings.js';
 
@@ -49,19 +51,42 @@ test('screen recording defaults to original resolution, 30 FPS, and 5s GOP', () 
       longEdge: effective.longEdge,
       fps: effective.fps,
       keyframeInterval: effective.keyframeInterval,
+      bitrateMode: effective.bitrateMode,
+      audioBitrate: effective.audioBitrate,
     },
-    { longEdge: 'original', fps: '30', keyframeInterval: 5 },
+    {
+      longEdge: 'original',
+      fps: '30',
+      keyframeInterval: 5,
+      bitrateMode: 'variable',
+      audioBitrate: 64000,
+    },
   );
 });
-test('screen recording preserves explicit FPS and GOP overrides', () => {
+test('screen recording preserves explicit encoding overrides', () => {
   const effective = effectiveVideoSettings(
     { ...defaultSettings('video'), sourceType: 'screen' },
-    { fps: '60', keyframeInterval: 2 },
+    {
+      fps: '60',
+      keyframeInterval: 2,
+      bitrateMode: 'constant',
+      audioBitrate: 96000,
+    },
     { sourceFps: 60 },
   );
   eq(
-    { fps: effective.fps, keyframeInterval: effective.keyframeInterval },
-    { fps: '60', keyframeInterval: 2 },
+    {
+      fps: effective.fps,
+      keyframeInterval: effective.keyframeInterval,
+      bitrateMode: effective.bitrateMode,
+      audioBitrate: effective.audioBitrate,
+    },
+    {
+      fps: '60',
+      keyframeInterval: 2,
+      bitrateMode: 'constant',
+      audioBitrate: 96000,
+    },
   );
 });
 test('mobile recording does not receive screen recording defaults', () => {
@@ -127,6 +152,27 @@ test('maps the internal GOP setting to mediabunny keyFrameInterval', () => {
     frameRate: 30,
     keyFrameInterval: 5,
   });
+});
+
+console.log('\n-- sparse audio silence detection --');
+test('uses five ordered timestamps across the media duration', () => {
+  eq(sparseAudioSampleTimestamps(100), [0, 25, 50, 75, 99.99]);
+});
+test('classifies sampled PCM below the threshold as silent', () => {
+  const buffer = {
+    numberOfChannels: 2,
+    getChannelData: (channel) => channel === 0
+      ? new Float32Array([0, 0.00001])
+      : new Float32Array([-0.00001, 0]),
+  };
+  eq(isAudioBufferSilent(buffer), true);
+});
+test('classifies sampled PCM above the threshold as audible', () => {
+  const buffer = {
+    numberOfChannels: 1,
+    getChannelData: () => new Float32Array([0, 0.01]),
+  };
+  eq(isAudioBufferSilent(buffer), false);
 });
 
 console.log('\n-- outputDimensions (longEdge: "original") --');

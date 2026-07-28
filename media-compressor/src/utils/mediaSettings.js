@@ -37,7 +37,7 @@ export const defaultSettings = (type) => ({
   fit: 'contain',
   background: type === 'video' ? 'black' : 'white',
   force: false,
-  ...(type === 'video' ? { stripAudio: false, fps: 'original', sourceType: 'auto' } : {})
+  ...(type === 'video' ? { stripAudio: false, audioBitrate: 128000, fps: 'original', sourceType: 'auto' } : {})
 });
 
 export function parseAspect(value = 'original', custom = '1:1') {
@@ -122,6 +122,8 @@ export function effectiveVideoSettings(base, overrides = {}, media = {}) {
   if (!('longEdge' in overrides)) settings.longEdge = 'original';
   if (!('fps' in overrides) && media.sourceFps >= 55) settings.fps = '30';
   if (!('keyframeInterval' in overrides)) settings.keyframeInterval = 5;
+  if (!('bitrateMode' in overrides)) settings.bitrateMode = 'variable';
+  if (!('audioBitrate' in overrides)) settings.audioBitrate = 64000;
   return settings;
 }
 
@@ -135,6 +137,21 @@ export function videoConversionOptions(settings, dimensions, bitrate) {
     frameRate: settings.fps === 'original' ? undefined : Number(settings.fps),
     ...(settings.keyframeInterval == null ? {} : { keyFrameInterval: settings.keyframeInterval }),
   };
+}
+
+export function sparseAudioSampleTimestamps(duration) {
+  if (!Number.isFinite(duration) || duration <= 0) return [0];
+  return [0, duration * .25, duration * .5, duration * .75, Math.max(0, duration - .01)];
+}
+
+export function isAudioBufferSilent(audioBuffer, threshold = 1e-4) {
+  for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+    const samples = audioBuffer.getChannelData(channel);
+    for (const sample of samples) {
+      if (Math.abs(sample) > threshold) return false;
+    }
+  }
+  return true;
 }
 
 export function changedFields(base, overrides = {}) {
