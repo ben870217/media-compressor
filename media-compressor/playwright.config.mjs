@@ -20,7 +20,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
     launchOptions: {
       ...(chromiumPath ? { executablePath: chromiumPath } : {}),
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--js-flags=--expose-gc'],
     },
   },
   webServer: {

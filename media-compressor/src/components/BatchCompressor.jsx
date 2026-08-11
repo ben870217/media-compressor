@@ -198,7 +198,18 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     const audioRate = settings.stripAudio ? 0 : settings.audioBitrate || 128000;
     const videoRate = Math.max(150000, Math.floor(((settings.targetSize * 1024 * 1024 * 8 * .9) / duration - audioRate) * (.82 ** attempt)));
     let cancelled = cancelCurrent.current;
+    let stopProcessing = false;
+    let outputCancelPromise = null;
+    let outputCancelError = null;
+    let processingFailure = null;
     let controller = null;
+    const cancelOutput = () => {
+      outputCancelPromise ??= output.cancel().catch((error) => {
+        outputCancelError = error;
+        throw error;
+      });
+      return outputCancelPromise;
+    };
     try {
       const videoTrack = await input.getPrimaryVideoTrack();
       if (!videoTrack || !(await videoTrack.canDecode())) throw new Error('此瀏覽器/裝置不支援所選影片編碼。請改用 H.264 / AVC，或降低解析度後重試。');
@@ -232,7 +243,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       controller = {
         cancel: async () => {
           cancelled = true;
-          return output.cancel();
+          return cancelOutput();
         },
       };
       currentVideoOperationRef.current = controller;
@@ -247,7 +258,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
         try {
           for await (const sample of sink.samples()) {
             try {
-              if (cancelled) return;
+              if (cancelled || stopProcessing) return;
               await videoSource.add(sample);
               if (currentItemRef.current?.id === item.id && !cancelCurrent.current) {
                 const progress = Math.min(1, (sample.timestamp + sample.duration) / duration);
@@ -257,8 +268,11 @@ export default function BatchCompressor({ type, onCompressComplete }) {
               sample.close();
             }
           }
+        } catch (error) {
+          stopProcessing = true;
+          throw error;
         } finally {
-          if (!cancelled) videoSource.close();
+          if (!cancelled && !stopProcessing) videoSource.close();
         }
       };
       const processAudioSamples = async () => {
@@ -266,23 +280,44 @@ export default function BatchCompressor({ type, onCompressComplete }) {
         try {
           for await (const sample of sink.samples()) {
             try {
-              if (cancelled) return;
+              if (cancelled || stopProcessing) return;
               await audioSource.add(sample);
             } finally {
               sample.close();
             }
           }
+        } catch (error) {
+          stopProcessing = true;
+          throw error;
         } finally {
-          if (!cancelled) audioSource.close();
+          if (!cancelled && !stopProcessing) audioSource.close();
         }
       };
-      await Promise.all([processVideoSamples(), ...(audioSource ? [processAudioSamples()] : [])]);
+      const processingTasks = [processVideoSamples(), ...(audioSource ? [processAudioSamples()] : [])];
+      await Promise.allSettled(processingTasks.map((task) => task.catch(async (error) => {
+        processingFailure ??= error;
+        stopProcessing = true;
+        try {
+          await cancelOutput();
+        } catch (cleanupError) {
+          if (error instanceof Error && error.cause === undefined) error.cause = cleanupError;
+        }
+        throw error;
+      })));
+      if (processingFailure) throw processingFailure;
       if (cancelled) throw new Error(CANCELLED);
       await output.finalize();
       return new Blob([target.buffer], { type: 'video/mp4' });
     } catch (error) {
-      if (cancelled) throw new Error(CANCELLED, { cause: error });
-      await output.cancel().catch(() => {});
+      if (cancelled) {
+        if (outputCancelError) throw outputCancelError;
+        throw new Error(CANCELLED, { cause: error });
+      }
+      try {
+        await cancelOutput();
+      } catch (cleanupError) {
+        if (error instanceof Error && error.cause === undefined) error.cause = cleanupError;
+      }
       throw error;
     } finally {
       if (currentVideoOperationRef.current === controller) currentVideoOperationRef.current = null;
@@ -315,6 +350,11 @@ export default function BatchCompressor({ type, onCompressComplete }) {
         ]);
         cancelSignalRef.current = null;
         if (outcome.cancelled) {
+          try {
+            await processing;
+          } catch (error) {
+            if (error.message !== CANCELLED && error.name !== 'ConversionCanceledError') throw error;
+          }
           updateItem(item.id, { status: 'cancelled', progress: 0, error: '' });
           setNotice('目前任務已取消，繼續處理下一項。');
           onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'cancelled', filename: item.file.name, detail: '使用者取消目前項目', batchSettings: base, overrides: item.overrides });

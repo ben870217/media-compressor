@@ -7,6 +7,9 @@
 ### Added
 - Pull Request quality gate，合併前自動執行 unit、lint、build 與 Playwright UI/E2E 驗收。
 
+### Fixed
+- 影片與音訊並行轉碼其中一路失敗時，先收束背景 sample 處理再取消輸出，避免 `VideoSample` 未關閉。
+
 ### Changed
 - 正式 GitHub Release 改為只提供版本化 PWA ZIP，移除 Windows 桌面發行流程與相關下載連結。
 
