@@ -31,7 +31,7 @@ export function detectVideoSourceType({ width, height, fps }) {
 export const defaultSettings = (type) => ({
   targetSize: type === 'video' ? 10 : 1,
   longEdge: type === 'video' ? 1080 : 2048,
-  format: type === 'video' ? 'avc' : 'image/jpeg',
+  format: type === 'video' ? 'av1' : 'image/jpeg',
   aspect: 'original',
   customAspect: '1:1',
   fit: 'contain',

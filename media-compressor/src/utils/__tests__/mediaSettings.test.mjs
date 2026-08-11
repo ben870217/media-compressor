@@ -41,6 +41,11 @@ test('defaultSettings("video") includes sourceType: "auto"', () => {
   eq(defaults.sourceType, 'auto');
 });
 
+test('defaultSettings("video") uses AV1 encoding by default', () => {
+  const defaults = defaultSettings('video');
+  eq(defaults.format, 'av1');
+});
+
 console.log('\n-- effectiveVideoSettings --');
 test('screen recording defaults to original resolution, 30 FPS, and 5s GOP', () => {
   const effective = effectiveVideoSettings(
