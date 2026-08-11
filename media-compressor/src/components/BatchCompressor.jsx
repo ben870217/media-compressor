@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AudioSampleSink, AudioSampleSource, EncodedPacketSink, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat, VideoSampleSink, VideoSampleSource } from 'mediabunny';
-import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, inferBitrateMode, isAnimatedImage, isAudioBufferSilent, mergedSettings, normalizeAspect, outputDimensions, sparseAudioSampleTimestamps, videoConversionOptions, videoSettingsComparison } from '../utils/mediaSettings';
+import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, inferBitrateMode, isAnimatedImage, isAudioBufferSilent, mergedSettings, normalizeAspect, normalizeVideoSampleTimestamp, outputDimensions, sparseAudioSampleTimestamps, videoConversionOptions, videoSettingsComparison } from '../utils/mediaSettings';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 const MAX_FILES = 50;
@@ -259,6 +259,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
           for await (const sample of sink.samples()) {
             try {
               if (cancelled || stopProcessing) return;
+              normalizeVideoSampleTimestamp(sample);
               await videoSource.add(sample);
               if (currentItemRef.current?.id === item.id && !cancelCurrent.current) {
                 const progress = Math.min(1, (sample.timestamp + sample.duration) / duration);

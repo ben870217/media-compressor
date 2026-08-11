@@ -9,6 +9,7 @@ import {
   effectiveVideoSettings,
   inferBitrateMode,
   isAudioBufferSilent,
+  normalizeVideoSampleTimestamp,
   outputDimensions,
   sparseAudioSampleTimestamps,
   videoSettingsComparison,
@@ -172,6 +173,24 @@ test('passes the selected bitrate mode to the video encoder options', () => {
     2_000_000,
   );
   eq(options.bitrateMode, 'variable');
+});
+
+console.log('\n-- video sample timestamps --');
+test('clamps decoder timestamps below zero before encoding', () => {
+  const sample = {
+    timestamp: -0.05791383219954648,
+    setTimestamp(value) { this.timestamp = value; },
+  };
+  normalizeVideoSampleTimestamp(sample);
+  eq(sample.timestamp, 0);
+});
+test('preserves non-negative decoder timestamps', () => {
+  const sample = {
+    timestamp: 1.25,
+    setTimestamp() { throw new Error('setTimestamp should not be called'); },
+  };
+  normalizeVideoSampleTimestamp(sample);
+  eq(sample.timestamp, 1.25);
 });
 
 console.log('\n-- video settings comparison --');
