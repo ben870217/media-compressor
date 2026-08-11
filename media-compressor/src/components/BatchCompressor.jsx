@@ -120,7 +120,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
   const itemsRef = useRef([]);
   const currentItemRef = useRef(null);
   const currentRequestIdRef = useRef(null);
-  const currentConversionRef = useRef(null);
+  const currentVideoOperationRef = useRef(null);
   const cancelSignalRef = useRef(null);
 
   useEffect(() => { itemsRef.current = items; }, [items]);
@@ -235,7 +235,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
           return output.cancel();
         },
       };
-      currentConversionRef.current = controller;
+      currentVideoOperationRef.current = controller;
       if (cancelled || cancelCurrent.current) {
         await controller.cancel();
         throw new Error(CANCELLED);
@@ -285,7 +285,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       await output.cancel().catch(() => {});
       throw error;
     } finally {
-      if (currentConversionRef.current === controller) currentConversionRef.current = null;
+      if (currentVideoOperationRef.current === controller) currentVideoOperationRef.current = null;
       input.dispose();
     }
   };
@@ -350,7 +350,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     setNotice('正在取消目前任務…');
     cancelSignalRef.current?.();
     if (type === 'video') {
-      currentConversionRef.current?.cancel().catch((error) => {
+      currentVideoOperationRef.current?.cancel().catch((error) => {
         updateItem(item.id, { status: 'failed', error: error.message });
         setNotice('取消轉碼時發生錯誤，請重試或移除此項目。');
       });

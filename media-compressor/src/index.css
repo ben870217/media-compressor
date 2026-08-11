@@ -315,7 +315,7 @@ code {
   margin: 10px 0 4px;
   padding: 10px;
   border: 1px solid var(--apple-hairline);
-  border-radius: 10px;
+  border-radius: var(--apple-radius-sm);
   background: var(--apple-report-bg);
   text-align: left;
   font-size: 12px;
@@ -345,7 +345,10 @@ code {
 .video-settings-comparison-label { color: var(--apple-ink); font-weight: 600; }
 .video-settings-overridden { color: var(--apple-primary); font-weight: 600; }
 .video-settings-comparison-action {
-  min-height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   padding: 3px 9px;
   border: 1px solid var(--apple-primary);
   border-radius: 999px;
@@ -355,8 +358,10 @@ code {
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
+  transition: transform .15s ease, background-color .15s ease, color .15s ease;
 }
-.video-settings-comparison-action:hover { background: var(--apple-primary); color: #fff; }
+.video-settings-comparison-action:hover { background: var(--apple-primary); color: var(--apple-chip-active-color); }
+.video-settings-comparison-action:active { transform: scale(.95); }
 .video-settings-comparison-action:disabled { opacity: .4; cursor: not-allowed; }
 
 @media (max-width: 580px) {
@@ -364,6 +369,8 @@ code {
     grid-template-columns: minmax(100px, 1fr) minmax(70px, .8fr) minmax(70px, .8fr);
   }
   .video-settings-comparison-action { grid-column: 3; justify-self: end; }
+  .source-type-chips { flex-direction: column; width: 100%; }
+  .source-chip { justify-content: center; width: 100%; }
 }
 
 /* ── 螢幕錄影解析度降階警示 (Screen Downscale Warning) ─── */
@@ -382,9 +389,3 @@ code {
   .screen-downscale-warning { color: #ffc94d; background: rgba(255, 200, 0, 0.10); border-color: rgba(255, 200, 0, 0.25); }
 }
 :root[data-theme="dark"] .screen-downscale-warning { color: #ffc94d; background: rgba(255, 200, 0, 0.10); border-color: rgba(255, 200, 0, 0.25); }
-
-/* ── RWD 調整 ─── */
-@media (max-width: 580px) {
-  .source-type-chips { flex-direction: column; width: 100%; }
-  .source-chip { justify-content: center; width: 100%; }
-}

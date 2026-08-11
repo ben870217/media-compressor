@@ -11,7 +11,7 @@
 ## 決策
 
 - 使用者按下取消後，任務立即呈現「取消中」，取消按鈕不可重複操作。
-- 影片轉碼使用 Mediabunny 的 `conversion.cancel()` 中斷。
+- 影片轉碼保留一個可取消的 Mediabunny 操作 handle。使用 high-level `Conversion` 時呼叫 `conversion.cancel()`；使用需要直接傳遞 encoder 選項的 low-level `Output` pipeline 時呼叫 `output.cancel()`。上層只依賴 handle 的 `cancel()` 介面。
 - 圖片轉碼終止並重建目前的 Worker 以中斷工作。
 - 實際中斷後，任務標示「已取消」並提示將繼續下一項。
 - 若工作已進入不可取消的完成階段，保留結果並標示「已完成，取消未生效」。
