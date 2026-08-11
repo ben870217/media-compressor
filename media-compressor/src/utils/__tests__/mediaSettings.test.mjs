@@ -9,7 +9,7 @@ import {
   effectiveVideoSettings,
   inferBitrateMode,
   isAudioBufferSilent,
-  normalizeVideoSampleTimestamp,
+  normalizeSampleTimestamp,
   outputDimensions,
   sparseAudioSampleTimestamps,
   videoSettingsComparison,
@@ -175,13 +175,21 @@ test('passes the selected bitrate mode to the video encoder options', () => {
   eq(options.bitrateMode, 'variable');
 });
 
-console.log('\n-- video sample timestamps --');
-test('clamps decoder timestamps below zero before encoding', () => {
+console.log('\n-- media sample timestamps --');
+test('clamps video decoder timestamps below zero before encoding', () => {
   const sample = {
     timestamp: -0.05791383219954648,
     setTimestamp(value) { this.timestamp = value; },
   };
-  normalizeVideoSampleTimestamp(sample);
+  normalizeSampleTimestamp(sample);
+  eq(sample.timestamp, 0);
+});
+test('clamps audio decoder timestamps below zero before encoding', () => {
+  const sample = {
+    timestamp: -0.05791383219954648,
+    setTimestamp(value) { this.timestamp = value; },
+  };
+  normalizeSampleTimestamp(sample);
   eq(sample.timestamp, 0);
 });
 test('preserves non-negative decoder timestamps', () => {
@@ -189,7 +197,7 @@ test('preserves non-negative decoder timestamps', () => {
     timestamp: 1.25,
     setTimestamp() { throw new Error('setTimestamp should not be called'); },
   };
-  normalizeVideoSampleTimestamp(sample);
+  normalizeSampleTimestamp(sample);
   eq(sample.timestamp, 1.25);
 });
 

@@ -140,9 +140,9 @@ export function videoConversionOptions(settings, dimensions, bitrate) {
   };
 }
 
-export function normalizeVideoSampleTimestamp(sample) {
+export function normalizeSampleTimestamp(sample) {
   // Some containers expose decoder preroll as a negative PTS, but WebCodecs
-  // VideoEncoder only accepts timestamps at or after the output timeline origin.
+  // encoders only accept timestamps at or after the output timeline origin.
   if (sample.timestamp < 0) sample.setTimestamp(0);
   return sample;
 }
