@@ -256,7 +256,9 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       const processVideoSamples = async () => {
         const sink = new VideoSampleSink(videoTrack);
         try {
-          for await (const sample of sink.samples()) {
+          // Start at the output timeline origin so decoder preroll packets with
+          // negative timestamps never reach the WebCodecs decoder.
+          for await (const sample of sink.samples(0)) {
             try {
               if (cancelled || stopProcessing) return;
               normalizeSampleTimestamp(sample);
@@ -279,7 +281,9 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       const processAudioSamples = async () => {
         const sink = new AudioSampleSink(sourceAudioTrack);
         try {
-          for await (const sample of sink.samples()) {
+          // Start at the output timeline origin so decoder preroll packets with
+          // negative timestamps never reach the WebCodecs decoder.
+          for await (const sample of sink.samples(0)) {
             try {
               if (cancelled || stopProcessing) return;
               normalizeSampleTimestamp(sample);
