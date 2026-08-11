@@ -59,7 +59,7 @@ MediaCompressor 是一套以 React、WebCodecs 與 Mediabunny 打造的純前端
 
 ```bash
 # 在專案根目錄啟動開發容器
-docker compose up -d
+docker compose up -d --build
 
 # 安裝依賴
 docker exec -w /app/media-compressor media-compressor-dev npm install
@@ -88,6 +88,7 @@ docker compose down
 | `npm run build` | 建立正式環境檔案至 `dist/` |
 | `npm run preview` | 在本機預覽正式建置 |
 | `npm run lint` | 執行 ESLint 靜態檢查 |
+| `npm run test:e2e` | 以 Docker Chromium 執行 MOV、預覽、折疊面板與 RWD UI 驗收 |
 
 使用 Docker 時，請在指令前加上：
 
@@ -100,6 +101,8 @@ docker exec -w /app/media-compressor media-compressor-dev
 ```bash
 docker exec -w /app/media-compressor media-compressor-dev npm run build
 ```
+
+`npm run test:e2e` 會由 Playwright 啟動或重用 Vite 開發伺服器，並使用 Docker image 內的 `/usr/bin/chromium`。測試 fixture 位於 `media-compressor/tests/fixtures/mac-h264-aac.mov`；若要重新產生 fixture，使用 image 內的 `ffmpeg`，再以 `ffprobe` 檢查 H.264/AAC、320×180、30 FPS 與 48 kHz 立體聲條件。AAC WebCodecs encoder 是否可用仍取決於瀏覽器與作業系統 build；目前 Alpine Chromium 的驗收轉碼案例會透過 UI 移除音訊後確認 MP4 輸出，避免靜默丟失音訊。
 
 ## 專案結構
 
@@ -116,7 +119,9 @@ docker exec -w /app/media-compressor media-compressor-dev npm run build
     │   ├── App.jsx
     │   └── main.jsx
     ├── eslint.config.js
+    ├── playwright.config.mjs
     ├── package.json
+    ├── tests/                    # fixture 與 Playwright UI/E2E 驗收
     └── vite.config.js
 ```
 

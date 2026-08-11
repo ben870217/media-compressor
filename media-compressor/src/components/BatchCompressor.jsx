@@ -68,7 +68,7 @@ async function videoMeta(file) {
     try {
       const audioTrack = await input.getPrimaryAudioTrack();
       data.hasAudio = Boolean(audioTrack);
-      data.isSilent = false;
+      data.suspectedSilent = false;
       data.audioBitrate = null;
       if (audioTrack) {
         const averageBitrate = await audioTrack.getAverageBitrate();
@@ -81,23 +81,23 @@ async function videoMeta(file) {
       if (audioTrack && await audioTrack.canDecode()) {
         const sink = new AudioSampleSink(audioTrack);
         let examinedSamples = 0;
-        data.isSilent = true;
+        data.suspectedSilent = true;
         for await (const sample of sink.samplesAtTimestamps(sparseAudioSampleTimestamps(data.duration))) {
           if (!sample) continue;
           try {
             examinedSamples++;
             if (!isAudioBufferSilent(sample.toAudioBuffer())) {
-              data.isSilent = false;
+              data.suspectedSilent = false;
               break;
             }
           } finally {
             sample.close();
           }
         }
-        if (!examinedSamples) data.isSilent = false;
+        if (!examinedSamples) data.suspectedSilent = false;
       }
     } catch (e) {
-      data.isSilent = false;
+      data.suspectedSilent = false;
       console.warn('Audio silence detection via mediabunny failed:', e);
     }
     return data;
@@ -454,9 +454,9 @@ export default function BatchCompressor({ type, onCompressComplete }) {
             )}
           </div>
         )}
-        {type === 'video' && item.meta.isSilent && !effective(item).stripAudio && (
+        {type === 'video' && item.meta.suspectedSilent && !effective(item).stripAudio && (
           <div className="source-type-badge-row">
-            <span className="source-type-item-badge">🔇 建議移除無聲音訊軌</span>
+            <span className="source-type-item-badge">🔇 疑似靜音，建議檢查後移除</span>
             <button type="button" className="source-type-override-btn" onClick={() => override(item, 'stripAudio', true)}>移除音訊</button>
           </div>
         )}
@@ -515,29 +515,31 @@ function comparisonOverrideValue(key, value) {
 
 function VideoSettingsComparison({ source, recommended, overrides = {}, editable, onOverride, onReset }) {
   const rows = videoSettingsComparison(source, recommended);
-  return <section className="video-settings-comparison" aria-label="來源與建議參數對比">
-    <div className="video-settings-comparison-title">來源／螢幕錄影建議參數</div>
-    <div className="video-settings-comparison-grid video-settings-comparison-header" aria-hidden="true">
-      <span>參數</span><span>來源</span><span>建議</span><span>動作</span>
-    </div>
-    {rows.map(({ key, label, sourceValue, recommendedValue }) => {
-      const hasOverride = Object.prototype.hasOwnProperty.call(overrides, key);
-      const canPreserveSource = sourceValue != null && sourceValue !== 'unknown';
-      return <div className="video-settings-comparison-grid" key={key}>
-        <span className="video-settings-comparison-label">{label}</span>
-        <span>{formatComparisonValue(key, sourceValue)}</span>
-        <span className={hasOverride ? 'video-settings-overridden' : ''}>{formatComparisonValue(key, recommendedValue)}</span>
-        <button
-          type="button"
-          className="video-settings-comparison-action"
-          disabled={!editable || !canPreserveSource}
-          onClick={() => hasOverride ? onReset(key) : onOverride(key, comparisonOverrideValue(key, sourceValue))}
-        >
-          {hasOverride ? '使用建議' : '保留來源'}
-        </button>
-      </div>;
-    })}
-  </section>;
+  return <details className="video-settings-comparison-details">
+    <summary>來源／螢幕錄影建議參數</summary>
+    <section className="video-settings-comparison" aria-label="來源與建議參數對比">
+      <div className="video-settings-comparison-grid video-settings-comparison-header" aria-hidden="true">
+        <span>參數</span><span>來源</span><span>建議</span><span>動作</span>
+      </div>
+      {rows.map(({ key, label, sourceValue, recommendedValue }) => {
+        const hasOverride = Object.prototype.hasOwnProperty.call(overrides, key);
+        const canPreserveSource = sourceValue != null && sourceValue !== 'unknown';
+        return <div className="video-settings-comparison-grid" key={key}>
+          <span className="video-settings-comparison-label">{label}</span>
+          <span>{formatComparisonValue(key, sourceValue)}</span>
+          <span className={hasOverride ? 'video-settings-overridden' : ''}>{formatComparisonValue(key, recommendedValue)}</span>
+          <button
+            type="button"
+            className="video-settings-comparison-action"
+            disabled={!editable || !canPreserveSource}
+            onClick={() => hasOverride ? onReset(key) : onOverride(key, comparisonOverrideValue(key, sourceValue))}
+          >
+            {hasOverride ? '使用建議' : '保留來源'}
+          </button>
+        </div>;
+      })}
+    </section>
+  </details>;
 }
 
 function Settings({ settings, type, onChange, overridden = {}, onReset, fields = 'all' }) {

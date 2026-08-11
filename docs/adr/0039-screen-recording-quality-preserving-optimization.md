@@ -38,7 +38,7 @@ Chosen Option: **Option 2**.
    - UI presents clear side-by-side comparison of source bitrate mode vs VBR mode.
 
 4. **Audio Rate Optimization (64kbps Voice Baseline)**:
-   - Default audio rate to 64 kbps AAC/Opus optimized for speech, with automated silent-track detection warning to suggest audio stripping.
+   - Default audio rate to 64 kbps AAC/Opus optimized for speech, with a sampled-silence warning that suggests checking before stripping audio.
    - UI presents original vs optimized audio settings with override options.
 
 ## Consequences

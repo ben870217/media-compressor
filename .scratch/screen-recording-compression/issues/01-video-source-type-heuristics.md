@@ -7,9 +7,11 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** implemented-not-accepted
 
-- [ ] 在 `mediaSettings.js` 實作 `detectVideoSourceType({ width, height })` 純函式
-- [ ] 擴充 `defaultSettings('video')` 包含 `sourceType: 'auto'`
-- [ ] 擴充 `outputDimensions()` 當 `sourceType === 'screen'` 且 `longEdge === 'original'` 時保持點對點 1:1 不縮放
-- [ ] 完成 `mediaSettings` 的測試與驗證
+**Audit (2026-08-11):** `HEAD ecfe64a` 已有對應程式碼與 31/31 單元測試；GitHub issue 仍為 `OPEN`，所以依專案完成標準暫列為「已實作，未結案」。
+
+- [x] 在 `mediaSettings.js` 實作 `detectVideoSourceType({ width, height })` 純函式
+- [x] 擴充 `defaultSettings('video')` 包含 `sourceType: 'auto'`
+- [x] 擴充 `outputDimensions()` 當 `sourceType === 'screen'` 且 `longEdge === 'original'` 時保持點對點 1:1 不縮放
+- [x] 完成 `mediaSettings` 的測試與驗證

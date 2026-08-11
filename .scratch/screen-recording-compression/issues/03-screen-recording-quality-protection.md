@@ -7,9 +7,11 @@
 
 **Blocked by:** [#2 02 — 實作 UI 全域與單檔來源類型切換器與建議標籤](https://github.com/ben870217/media-compressor/issues/2)
 
-**Status:** ready-for-agent
+**Status:** implemented-not-accepted
 
-- [ ] 轉檔為 `screen` 時預設套用 `longEdge: 'original'` 與 `fps: '30'`
-- [ ] 在 `BatchCompressor.jsx` 的解析度選擇區呈現文字模糊警示訊息
-- [ ] 驗證轉檔執行時 `processVideo` 正確傳遞長寬與 FPS 參數
-- [ ] 執行轉檔測試與畫面 RWD 驗證
+**Audit (2026-08-11):** `HEAD ecfe64a` 已有對應設定、轉檔傳遞與警示邏輯；Docker Chromium 已通過螢幕模式比較面板、移除音訊後轉檔與 735/580/480 RWD 驗證。GitHub issue 仍為 `OPEN`，且 AAC 保留音訊仍需支援該 encoder 的瀏覽器環境，依專案完成標準暫列為「已實作，未結案」。
+
+- [x] 轉檔為 `screen` 時預設套用 `longEdge: 'original'` 與 `fps: '30'`
+- [x] 在 `BatchCompressor.jsx` 的解析度選擇區呈現文字模糊警示訊息
+- [x] 驗證轉檔執行時 `processVideo` 正確傳遞長寬與 FPS 參數
+- [x] 執行轉檔測試與畫面 RWD 驗證

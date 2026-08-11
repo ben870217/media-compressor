@@ -311,20 +311,17 @@ code {
 }
 
 /* ── 來源與建議編碼參數對比 (Source vs Recommended Encoding) ─── */
+.video-settings-comparison-details { margin: 10px 0 4px; }
+.video-settings-comparison-details > summary { cursor: pointer; color: var(--apple-primary); font-size: 13px; }
+.video-settings-comparison-details[open] > summary { margin-bottom: 6px; }
 .video-settings-comparison {
-  margin: 10px 0 4px;
+  margin: 0;
   padding: 10px;
   border: 1px solid var(--apple-hairline);
   border-radius: var(--apple-radius-sm);
   background: var(--apple-report-bg);
   text-align: left;
   font-size: 12px;
-}
-.video-settings-comparison-title {
-  margin: 0 4px 6px;
-  color: var(--apple-ink);
-  font-size: 13px;
-  font-weight: 700;
 }
 .video-settings-comparison-grid {
   display: grid;
