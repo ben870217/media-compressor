@@ -50,7 +50,7 @@
   - **核心計算與啟發式純函式接縫 (`mediaSettings`)**:
     使用高階純函式接縫 `detectVideoSourceType` 與 `outputDimensions` 進行單元測試。測試聚焦於外部行為（External Behavior），涵蓋多種解析度與 FPS 組合（1080p 30fps 手機影片、1080p 60fps OBS 螢幕錄影、4K 螢幕錄影 3840x2160、21:9 螢幕錄影 3440x1440）的正確分類與 1:1 尺寸計算。
   - **測試範例與命令**:
-    執行 `docker exec -w /app/media-compressor media-compressor-dev node src/utils/__tests__/mediaSettings.test.mjs`。
+    執行 `docker exec -w /app/media-compressor media-compressor-dev npm run test:unit`。
   - **瀏覽器驗收**:
     執行 `docker exec -w /app/media-compressor media-compressor-dev npm run test:e2e`，使用 `tests/fixtures/mac-h264-aac.mov` 驗證 MOV metadata、來源建議、預覽與 Chrome/Chromium 轉檔流程。AAC encoder 能力仍依瀏覽器 build 而異。
 

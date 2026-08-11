@@ -2,7 +2,7 @@
 
 ## 範圍
 
-本紀錄盤點 `優化.md` 的四組需求，並補上目前缺少的可重複 UI／瀏覽器證據。程式碼對照基準為 `HEAD ecfe64a` 加上本工作樹的測試與文件變更；GitHub Issue #1～#15 均維持 `OPEN`，本次沒有修改遠端 issue 狀態。
+本紀錄盤點 2026-08-11 原始優化需求的四組範圍，並補上可重複的 UI／瀏覽器證據。程式碼對照基準為加入 Pull Request CI 前的 `HEAD 33ae659`，後續測試與文件變更均記錄於本工作樹；GitHub Issue #1～#15 均維持 `OPEN`，本次沒有修改遠端 issue 狀態。
 
 ## 驗證環境
 
@@ -18,7 +18,7 @@ fixture 是 320×180、30 FPS 的 QuickTime MOV，包含 H.264 影片與 AAC 48 
 ## 已執行的品質檢查
 
 ```text
-node src/utils/__tests__/mediaSettings.test.mjs   31 passed, 0 failed
+npm run test:unit                                  31 passed, 0 failed
 npm run lint                                      passed
 npm run build                                     passed
 npm run test:e2e                                  5 passed, 0 failed
@@ -38,3 +38,9 @@ Playwright UI/E2E 覆蓋：
 Docker Alpine Chromium 回報目前 AAC `AudioEncoder` 組合不支援（包括 2 聲道／48 kHz 案例）。因此產品保留「不支援時顯示錯誤、不可靜默丟音訊」的行為；本紀錄只把「移除音訊後的 MOV 轉 MP4」列為已驗證，沒有把保留 AAC 音訊的跨環境轉碼誤記為完成。仍需在支援該 AAC encoder 的桌面 Chrome／實際目標裝置上補驗。
 
 in-app Browser connector 在本次環境沒有可用 browser session，因此沒有把 connector 狀態冒充為 E2E 證據；本紀錄的 UI 證據來自 Docker 內 Playwright Chromium。
+
+## Pull Request CI
+
+`.github/workflows/ci.yml` 將上述 unit、lint、build 與 E2E 命令組成 `quality-gate` required job。CI 使用 Node 26、Ubuntu runner 與 Playwright 管理的 Chromium；本機 Docker 則透過 `PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium` 使用 system Chromium。失敗時的 Playwright artifacts 保存 14 天。
+
+GitHub `main` branch protection 已設定 `quality-gate` 為 strict required status check，且啟用 administrator enforcement；設定已透過 GitHub API read-back 確認。

@@ -88,6 +88,7 @@ docker compose down
 | `npm run build` | 建立正式環境檔案至 `dist/` |
 | `npm run preview` | 在本機預覽正式建置 |
 | `npm run lint` | 執行 ESLint 靜態檢查 |
+| `npm run test:unit` | 執行 mediaSettings 純函式測試 |
 | `npm run test:e2e` | 以 Docker Chromium 執行 MOV、預覽、折疊面板與 RWD UI 驗收 |
 
 使用 Docker 時，請在指令前加上：
@@ -102,7 +103,13 @@ docker exec -w /app/media-compressor media-compressor-dev
 docker exec -w /app/media-compressor media-compressor-dev npm run build
 ```
 
-`npm run test:e2e` 會由 Playwright 啟動或重用 Vite 開發伺服器，並使用 Docker image 內的 `/usr/bin/chromium`。測試 fixture 位於 `media-compressor/tests/fixtures/mac-h264-aac.mov`；若要重新產生 fixture，使用 image 內的 `ffmpeg`，再以 `ffprobe` 檢查 H.264/AAC、320×180、30 FPS 與 48 kHz 立體聲條件。AAC WebCodecs encoder 是否可用仍取決於瀏覽器與作業系統 build；目前 Alpine Chromium 的驗收轉碼案例會透過 UI 移除音訊後確認 MP4 輸出，避免靜默丟失音訊。
+`npm run test:e2e` 會由 Playwright 啟動或重用 Vite 開發伺服器；本機 Docker Compose 透過 `PLAYWRIGHT_CHROMIUM_PATH` 使用 image 內的 `/usr/bin/chromium`，CI 則安裝 Playwright 管理的 Chromium。測試 fixture 位於 `media-compressor/tests/fixtures/mac-h264-aac.mov`；若要重新產生 fixture，使用 image 內的 `ffmpeg`，再以 `ffprobe` 檢查 H.264/AAC、320×180、30 FPS 與 48 kHz 立體聲條件。AAC WebCodecs encoder 是否可用仍取決於瀏覽器與作業系統 build；目前 Alpine Chromium 的驗收轉碼案例會透過 UI 移除音訊後確認 MP4 輸出，避免靜默丟失音訊。
+
+## Pull Request 品質閘門
+
+每個 GitHub Pull Request 都會觸發 `.github/workflows/ci.yml` 的 `quality-gate` job，依序執行 `npm ci`、`npm run test:unit`、`npm run lint`、`npm run build` 與 `npm run test:e2e`。CI 使用 Node 26、Ubuntu runner 與 Playwright 管理的 Chromium；同一 Pull Request 的新 commit 會取消舊執行。測試失敗時會保留 Playwright screenshot、trace 與 error context 14 天。
+
+`quality-gate` 應在 GitHub `main` branch protection／ruleset 中設為 required status check；Pages deploy 與 tag Release workflow 不取代這個合併前品質閘門。
 
 ## 專案結構
 

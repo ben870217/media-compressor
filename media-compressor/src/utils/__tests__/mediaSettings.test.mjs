@@ -1,6 +1,6 @@
 /**
  * Unit tests for detectVideoSourceType and outputDimensions
- * Run: docker exec -w /app/media-compressor media-compressor-dev node src/utils/__tests__/mediaSettings.test.mjs
+ * Run: docker exec -w /app/media-compressor media-compressor-dev npm run test:unit
  */
 
 import {

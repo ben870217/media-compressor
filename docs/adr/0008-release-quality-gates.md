@@ -18,9 +18,11 @@ Release workflow 依序執行：
 4. 驗證 Git tag、`package.json` version 與 `CHANGELOG.md` 版本段落相符
 5. 建立 GitHub Release
 
-`npm run test:e2e` 是瀏覽器敏感功能（例如 MOV、預覽與 RWD）的驗收命令，應在相關變更交付前於 Docker 環境執行並保存結果。現行 tag workflow 仍維持 lint/build/version gates，不把特定 Chromium/AAC encoder 的結果誤當成所有平台的 Release 保證。
+`npm run test:e2e` 是瀏覽器敏感功能（例如 MOV、預覽與 RWD）的驗收命令，應在相關變更交付前執行並保存結果；本機可在 Docker 執行，Pull Request CI 則使用 Ubuntu runner 與 Playwright 管理的 Chromium。現行 tag workflow 仍維持 lint/build/version gates，不把特定 Chromium/AAC encoder 的結果誤當成所有平台的 Release 保證。
 
-任一步驟失敗時，workflow 不得建立 Release。未建立自動測試腳本前，不新增空的測試步驟。
+Pull Request 的完整品質閘門由獨立的 `quality-gate` workflow 負責，執行 `npm run test:unit`、`npm run lint`、`npm run build` 與 `npm run test:e2e`；tag workflow 不重複承擔 Pull Request 的瀏覽器驗收責任。
+
+任一步驟失敗時，workflow 不得建立 Release；Pull Request workflow 則不得讓 failed 或 pending 的 `quality-gate` 通過合併。
 
 ## 後果
 
