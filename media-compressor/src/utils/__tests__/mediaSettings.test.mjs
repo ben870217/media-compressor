@@ -7,9 +7,11 @@ import {
   defaultSettings,
   detectVideoSourceType,
   effectiveVideoSettings,
+  inferBitrateMode,
   isAudioBufferSilent,
   outputDimensions,
   sparseAudioSampleTimestamps,
+  videoSettingsComparison,
   videoConversionOptions,
 } from '../mediaSettings.js';
 
@@ -153,6 +155,44 @@ test('maps the internal GOP setting to mediabunny keyFrameInterval', () => {
     keyFrameInterval: 5,
   });
 });
+test('passes the selected bitrate mode to the video encoder options', () => {
+  const options = videoConversionOptions(
+    {
+      format: 'avc',
+      fit: 'contain',
+      fps: '30',
+      bitrateMode: 'variable',
+    },
+    { width: 1920, height: 1080 },
+    2_000_000,
+  );
+  eq(options.bitrateMode, 'variable');
+});
+
+console.log('\n-- video settings comparison --');
+test('pairs source parameters with the effective screen recommendation', () => {
+  eq(
+    videoSettingsComparison(
+      { fps: 60, keyframeInterval: 2, bitrateMode: 'constant', audioBitrate: 128000 },
+      { fps: '30', keyframeInterval: 5, bitrateMode: 'variable', audioBitrate: 64000 },
+    ),
+    [
+      { key: 'fps', label: 'FPS', sourceValue: 60, recommendedValue: '30' },
+      { key: 'keyframeInterval', label: 'Keyframe Interval', sourceValue: 2, recommendedValue: 5 },
+      { key: 'bitrateMode', label: 'Bitrate Mode', sourceValue: 'constant', recommendedValue: 'variable' },
+      { key: 'audioBitrate', label: 'Audio Bitrate', sourceValue: 128000, recommendedValue: 64000 },
+    ],
+  );
+});
+test('infers constant bitrate when peak and average rates are close', () => {
+  eq(inferBitrateMode({ averageBitrate: 1_000_000, peakBitrate: 1_100_000 }), 'constant');
+});
+test('infers variable bitrate when peak rate is materially higher', () => {
+  eq(inferBitrateMode({ averageBitrate: 1_000_000, peakBitrate: 2_000_000 }), 'variable');
+});
+test('does not guess a bitrate mode without both source rates', () => {
+  eq(inferBitrateMode({ averageBitrate: null, peakBitrate: 2_000_000 }), 'unknown');
+});
 
 console.log('\n-- sparse audio silence detection --');
 test('uses five ordered timestamps across the media duration', () => {
@@ -191,4 +231,3 @@ test('640x360 longEdge:1080 -> no upscale, stays 640x360', () => eq(outputDimens
 console.log('\n' + '-'.repeat(50));
 console.log('Total: ' + (passed+failed) + '  Passed: ' + passed + '  Failed: ' + failed);
 if (failed > 0) process.exit(1);
-

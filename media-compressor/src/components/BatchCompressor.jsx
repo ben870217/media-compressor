@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AudioSampleSink, Conversion, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat } from 'mediabunny';
-import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, isAnimatedImage, isAudioBufferSilent, mergedSettings, normalizeAspect, outputDimensions, sparseAudioSampleTimestamps, videoConversionOptions } from '../utils/mediaSettings';
+import { AudioSampleSink, AudioSampleSource, EncodedPacketSink, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat, VideoSampleSink, VideoSampleSource } from 'mediabunny';
+import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, inferBitrateMode, isAnimatedImage, isAudioBufferSilent, mergedSettings, normalizeAspect, outputDimensions, sparseAudioSampleTimestamps, videoConversionOptions, videoSettingsComparison } from '../utils/mediaSettings';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 const MAX_FILES = 50;
@@ -16,8 +16,27 @@ async function imageMeta(file) {
   return meta;
 }
 
+async function estimateKeyframeInterval(track) {
+  const sink = new EncodedPacketSink(track);
+  let current = await sink.getFirstKeyPacket({ metadataOnly: true });
+  const intervals = [];
+  for (let count = 0; current && count < 32; count++) {
+    const next = await sink.getNextKeyPacket(current, { metadataOnly: true });
+    if (!next) break;
+    const interval = next.timestamp - current.timestamp;
+    if (Number.isFinite(interval) && interval > 0) intervals.push(interval);
+    current = next;
+  }
+  if (!intervals.length) return null;
+  intervals.sort((a, b) => a - b);
+  const middle = Math.floor(intervals.length / 2);
+  const median = intervals.length % 2 ? intervals[middle] : (intervals[middle - 1] + intervals[middle]) / 2;
+  return Number(median.toFixed(2));
+}
+
 async function videoMeta(file) {
   const url = URL.createObjectURL(file);
+  let input;
   try {
     const data = await new Promise((resolve, reject) => {
       const video = document.createElement('video');
@@ -25,13 +44,22 @@ async function videoMeta(file) {
       video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight, duration: video.duration });
       video.onerror = () => reject(new Error('Chrome 無法讀取此影片的 metadata。MOV 內的 codec（例如 HEVC 或 ProRes）可能不受目前裝置支援；請改用 H.264 來源檔，或在支援該 codec 的裝置上重試。'));
     });
-    const input = new Input({ source: new BlobSource(file), formats: [MP4, QTFF, MATROSKA, WEBM] });
+    input = new Input({ source: new BlobSource(file), formats: [MP4, QTFF, MATROSKA, WEBM] });
     try {
       const track = await input.getPrimaryVideoTrack();
       if (track) {
         const stats = await track.computePacketStats(30);
         if (stats?.averagePacketRate) {
           data.fps = Math.round(stats.averagePacketRate);
+        }
+        const averageBitrate = await track.getAverageBitrate();
+        const peakBitrate = await track.getBitrate();
+        data.videoBitrate = Number.isFinite(averageBitrate) ? averageBitrate : stats?.averageBitrate;
+        data.bitrateMode = inferBitrateMode({ averageBitrate: data.videoBitrate, peakBitrate });
+        try {
+          data.keyframeInterval = await estimateKeyframeInterval(track);
+        } catch (e) {
+          console.warn('Keyframe interval estimation via mediabunny failed:', e);
         }
       }
     } catch (e) {
@@ -41,6 +69,15 @@ async function videoMeta(file) {
       const audioTrack = await input.getPrimaryAudioTrack();
       data.hasAudio = Boolean(audioTrack);
       data.isSilent = false;
+      data.audioBitrate = null;
+      if (audioTrack) {
+        const averageBitrate = await audioTrack.getAverageBitrate();
+        if (Number.isFinite(averageBitrate)) data.audioBitrate = averageBitrate;
+        if (!Number.isFinite(data.audioBitrate)) {
+          const stats = await audioTrack.computePacketStats(30);
+          data.audioBitrate = stats?.averageBitrate || null;
+        }
+      }
       if (audioTrack && await audioTrack.canDecode()) {
         const sink = new AudioSampleSink(audioTrack);
         let examinedSamples = 0;
@@ -64,7 +101,10 @@ async function videoMeta(file) {
       console.warn('Audio silence detection via mediabunny failed:', e);
     }
     return data;
-  } finally { URL.revokeObjectURL(url); }
+  } finally {
+    input?.dispose();
+    URL.revokeObjectURL(url);
+  }
 }
 
 export default function BatchCompressor({ type, onCompressComplete }) {
@@ -155,18 +195,99 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     const target = new BufferTarget();
     const output = new Output({ format: new Mp4OutputFormat(), target });
     const duration = item.meta.duration || 1;
-    const audioRate = settings.stripAudio ? 0 : settings.audioBitrate;
+    const audioRate = settings.stripAudio ? 0 : settings.audioBitrate || 128000;
     const videoRate = Math.max(150000, Math.floor(((settings.targetSize * 1024 * 1024 * 8 * .9) / duration - audioRate) * (.82 ** attempt)));
-    // mediabunny Conversion 1.50.7 does not expose bitrateMode; WebCodecs uses VBR by default.
-    const conversion = await Conversion.init({ input, output, video: videoConversionOptions(settings, dimensions, videoRate), audio: settings.stripAudio ? { discard: true } : { codec: 'aac', bitrate: audioRate } });
-    if (!conversion.isValid) throw new Error('此瀏覽器/裝置不支援所選影片編碼。請改用 H.264 / AVC，或降低解析度後重試。');
-    conversion.onProgress = (progress) => { if (currentItemRef.current?.id === item.id && !cancelCurrent.current) updateItem(item.id, { progress: Math.round(progress * 100) }); };
-    currentConversionRef.current = conversion;
+    let cancelled = cancelCurrent.current;
+    let controller = null;
     try {
-      if (cancelCurrent.current) await conversion.cancel();
-      await conversion.execute();
+      const videoTrack = await input.getPrimaryVideoTrack();
+      if (!videoTrack || !(await videoTrack.canDecode())) throw new Error('此瀏覽器/裝置不支援所選影片編碼。請改用 H.264 / AVC，或降低解析度後重試。');
+      const sourceAudioTrack = settings.stripAudio ? null : await input.getPrimaryAudioTrack();
+      if (sourceAudioTrack && !(await sourceAudioTrack.canDecode())) throw new Error('此影片的音訊編碼無法由目前瀏覽器解碼，請改用支援 AAC 的來源檔或移除音訊。');
+
+      const options = videoConversionOptions(settings, dimensions, videoRate);
+      const frameRate = options.frameRate;
+      const needsResize = item.meta.width !== dimensions.width || item.meta.height !== dimensions.height;
+      const transform = {
+        ...(needsResize ? { width: dimensions.width, height: dimensions.height, fit: options.fit } : {}),
+        ...(frameRate === undefined ? {} : { frameRate }),
+      };
+      const videoSource = new VideoSampleSource({
+        codec: options.codec,
+        bitrate: options.bitrate,
+        bitrateMode: options.bitrateMode,
+        keyFrameInterval: options.keyFrameInterval,
+        sizeChangeBehavior: needsResize ? 'passThrough' : undefined,
+        transform: Object.keys(transform).length ? transform : undefined,
+      });
+      const rotation = needsResize ? 0 : await videoTrack.getRotation();
+      output.addVideoTrack(videoSource, {
+        ...(frameRate === undefined ? {} : { frameRate }),
+        rotation,
+      });
+
+      const audioSource = sourceAudioTrack ? new AudioSampleSource({ codec: 'aac', bitrate: audioRate, bitrateMode: settings.bitrateMode }) : null;
+      if (audioSource) output.addAudioTrack(audioSource);
+
+      controller = {
+        cancel: async () => {
+          cancelled = true;
+          return output.cancel();
+        },
+      };
+      currentConversionRef.current = controller;
+      if (cancelled || cancelCurrent.current) {
+        await controller.cancel();
+        throw new Error(CANCELLED);
+      }
+
+      await output.start();
+      const processVideoSamples = async () => {
+        const sink = new VideoSampleSink(videoTrack);
+        try {
+          for await (const sample of sink.samples()) {
+            try {
+              if (cancelled) return;
+              await videoSource.add(sample);
+              if (currentItemRef.current?.id === item.id && !cancelCurrent.current) {
+                const progress = Math.min(1, (sample.timestamp + sample.duration) / duration);
+                updateItem(item.id, { progress: Math.round(progress * 100) });
+              }
+            } finally {
+              sample.close();
+            }
+          }
+        } finally {
+          if (!cancelled) videoSource.close();
+        }
+      };
+      const processAudioSamples = async () => {
+        const sink = new AudioSampleSink(sourceAudioTrack);
+        try {
+          for await (const sample of sink.samples()) {
+            try {
+              if (cancelled) return;
+              await audioSource.add(sample);
+            } finally {
+              sample.close();
+            }
+          }
+        } finally {
+          if (!cancelled) audioSource.close();
+        }
+      };
+      await Promise.all([processVideoSamples(), ...(audioSource ? [processAudioSamples()] : [])]);
+      if (cancelled) throw new Error(CANCELLED);
+      await output.finalize();
       return new Blob([target.buffer], { type: 'video/mp4' });
-    } finally { if (currentConversionRef.current === conversion) currentConversionRef.current = null; }
+    } catch (error) {
+      if (cancelled) throw new Error(CANCELLED, { cause: error });
+      await output.cancel().catch(() => {});
+      throw error;
+    } finally {
+      if (currentConversionRef.current === controller) currentConversionRef.current = null;
+      input.dispose();
+    }
   };
 
   const runQueue = async (retryOnly = false) => {
@@ -339,6 +460,16 @@ export default function BatchCompressor({ type, onCompressComplete }) {
             <button type="button" className="source-type-override-btn" onClick={() => override(item, 'stripAudio', true)}>移除音訊</button>
           </div>
         )}
+        {type === 'video' && effective(item).sourceType === 'screen' && (
+          <VideoSettingsComparison
+            source={item.meta}
+            recommended={effective(item)}
+            overrides={item.overrides}
+            editable={!running && (item.status === 'pending' || item.status === 'failed')}
+            onOverride={(key, value) => override(item, key, value)}
+            onReset={(key) => resetField(item, key)}
+          />
+        )}
         {item.meta.width && <p>{item.meta.width} × {item.meta.height} · {normalizeAspect(item.meta.width, item.meta.height)}{item.meta.duration ? ` · ${item.meta.duration.toFixed(1)} 秒` : ''}</p>}
         <MediaPreview blob={item.file} type={type} label="原始檔案預覽" />
         {item.status === 'processing' && <progress max="100" value={item.progress} />}{item.error && <p className="error">{item.error}</p>}
@@ -354,7 +485,11 @@ function label(status) { return ({ pending: '等待中', processing: '處理中'
 function advancedSummary(settings, type) {
   const longEdgeLabel = settings.longEdge === 'original' ? '原始解析度' : `長邊 ${settings.longEdge}px`;
   const values = [longEdgeLabel, settings.fit === 'original' ? '原始比例' : settings.fit === 'cover' ? '裁切填滿' : '完整顯示'];
-  if (type === 'video') values.push(settings.fps === 'original' ? '原始 FPS' : `${settings.fps} FPS`, settings.stripAudio ? '移除音訊' : '保留音訊');
+  if (type === 'video') {
+    values.push(settings.fps === 'original' ? '原始 FPS' : `${settings.fps} FPS`, settings.stripAudio ? '移除音訊' : '保留音訊');
+    if (settings.bitrateMode) values.push(settings.bitrateMode === 'variable' ? 'VBR' : 'CBR');
+    if (settings.audioBitrate) values.push(`${Math.round(settings.audioBitrate / 1000)}k 音訊`);
+  }
   return values.join(' · ');
 }
 
@@ -363,6 +498,46 @@ function MediaPreview({ blob, type, label }) {
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
   const hide = () => setUrl((current) => { if (current) URL.revokeObjectURL(current); return null; });
   return <div className="media-preview">{url ? <><button type="button" onClick={hide}>隱藏{label}</button>{type === 'video' ? <video controls preload="metadata" src={url} /> : <img src={url} alt={label} />}</> : <button type="button" onClick={() => setUrl(URL.createObjectURL(blob))}>顯示{label}</button>}</div>;
+}
+
+function formatComparisonValue(key, value) {
+  if (value == null || value === 'unknown') return '未偵測';
+  if (key === 'fps') return value === 'original' ? '原始' : `${value} FPS`;
+  if (key === 'keyframeInterval') return `${value} 秒`;
+  if (key === 'bitrateMode') return value === 'variable' ? 'VBR' : value === 'constant' ? 'CBR' : value;
+  if (key === 'audioBitrate') return `${Math.round(value / 1000)} kbps`;
+  return String(value);
+}
+
+function comparisonOverrideValue(key, value) {
+  return key === 'fps' && value != null ? String(value) : value;
+}
+
+function VideoSettingsComparison({ source, recommended, overrides = {}, editable, onOverride, onReset }) {
+  const rows = videoSettingsComparison(source, recommended);
+  return <section className="video-settings-comparison" aria-label="來源與建議參數對比">
+    <div className="video-settings-comparison-title">來源／螢幕錄影建議參數</div>
+    <div className="video-settings-comparison-grid video-settings-comparison-header" aria-hidden="true">
+      <span>參數</span><span>來源</span><span>建議</span><span>動作</span>
+    </div>
+    {rows.map(({ key, label, sourceValue, recommendedValue }) => {
+      const hasOverride = Object.prototype.hasOwnProperty.call(overrides, key);
+      const canPreserveSource = sourceValue != null && sourceValue !== 'unknown';
+      return <div className="video-settings-comparison-grid" key={key}>
+        <span className="video-settings-comparison-label">{label}</span>
+        <span>{formatComparisonValue(key, sourceValue)}</span>
+        <span className={hasOverride ? 'video-settings-overridden' : ''}>{formatComparisonValue(key, recommendedValue)}</span>
+        <button
+          type="button"
+          className="video-settings-comparison-action"
+          disabled={!editable || !canPreserveSource}
+          onClick={() => hasOverride ? onReset(key) : onOverride(key, comparisonOverrideValue(key, sourceValue))}
+        >
+          {hasOverride ? '使用建議' : '保留來源'}
+        </button>
+      </div>;
+    })}
+  </section>;
 }
 
 function Settings({ settings, type, onChange, overridden = {}, onReset, fields = 'all' }) {
@@ -380,7 +555,7 @@ function Settings({ settings, type, onChange, overridden = {}, onReset, fields =
     {settings.aspect === 'custom' && field('customAspect', <>自訂比例<input value={settings.customAspect} onChange={(e) => onChange('customAspect', e.target.value)} placeholder="例如 5:4" /></>)}
     {field('fit', <>比例處理<select value={settings.fit} onChange={(e) => onChange('fit', e.target.value)}><option value="contain">完整顯示並加留白</option><option value="cover">裁切填滿（置中）</option><option value="original">維持原始比例</option></select></>)}
     {settings.fit === 'contain' && field('background', <>留白背景<select value={settings.background} onChange={(e) => onChange('background', e.target.value)}><option value="black">黑色</option><option value="white">白色</option><option value="blur">模糊延展</option><option value="#0066cc">自訂藍色</option></select></>)}
-    {type === 'video' && <>{field('fps', <>FPS<select value={settings.fps} onChange={(e) => onChange('fps', e.target.value)}><option value="original">原始 FPS</option><option value="60">60</option><option value="30">30{isScreen ? '（螢幕錄影建議）' : ''}</option><option value="24">24</option></select></>)}{field('stripAudio', <><input type="checkbox" checked={settings.stripAudio} onChange={(e) => onChange('stripAudio', e.target.checked)} />移除音訊</>)}</> }</>}
+    {type === 'video' && <>{field('fps', <>FPS<select value={settings.fps} onChange={(e) => onChange('fps', e.target.value)}><option value="original">原始 FPS</option><option value="60">60</option><option value="30">30{isScreen ? '（螢幕錄影建議）' : ''}</option><option value="24">24</option></select></>)}{settings.keyframeInterval !== undefined && field('keyframeInterval', <>Keyframe Interval（秒）<input type="number" min="0" step="0.5" value={settings.keyframeInterval} onChange={(e) => onChange('keyframeInterval', Math.max(0, Number(e.target.value)))} /></>)}{settings.bitrateMode !== undefined && field('bitrateMode', <>Bitrate Mode<select value={settings.bitrateMode} onChange={(e) => onChange('bitrateMode', e.target.value)}><option value="variable">VBR（變動位元率）</option><option value="constant">CBR（固定位元率）</option></select></>)}{settings.audioBitrate !== undefined && field('audioBitrate', <>Audio Bitrate<select value={settings.audioBitrate} onChange={(e) => onChange('audioBitrate', Number(e.target.value))}><option value="32000">32 kbps</option><option value="64000">64 kbps（螢幕錄影建議）</option><option value="96000">96 kbps</option><option value="128000">128 kbps</option></select></>)}{field('stripAudio', <><input type="checkbox" checked={settings.stripAudio} onChange={(e) => onChange('stripAudio', e.target.checked)} />移除音訊</>)}</> }</>}
     {primary && field('format', <>輸出格式<select value={settings.format} onChange={(e) => onChange('format', e.target.value)}>{type === 'video' ? <><option value="avc">H.264 / AVC</option><option value="hevc">H.265 / HEVC</option><option value="vp9">VP9</option><option value="av1">AV1</option></> : <><option value="image/jpeg">JPEG</option><option value="image/webp">WebP</option><option value="image/png">PNG</option></>}</select></>)}
   </div>;
 }

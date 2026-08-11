@@ -310,6 +310,62 @@ code {
   color: var(--apple-canvas);
 }
 
+/* ── 來源與建議編碼參數對比 (Source vs Recommended Encoding) ─── */
+.video-settings-comparison {
+  margin: 10px 0 4px;
+  padding: 10px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: 10px;
+  background: var(--apple-report-bg);
+  text-align: left;
+  font-size: 12px;
+}
+.video-settings-comparison-title {
+  margin: 0 4px 6px;
+  color: var(--apple-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.video-settings-comparison-grid {
+  display: grid;
+  grid-template-columns: minmax(112px, 1.1fr) minmax(78px, .8fr) minmax(78px, .8fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  padding: 3px 4px;
+  color: var(--apple-ink-secondary);
+}
+.video-settings-comparison-header {
+  min-height: 24px;
+  border-bottom: 1px solid var(--apple-hairline);
+  color: var(--apple-ink-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.video-settings-comparison-label { color: var(--apple-ink); font-weight: 600; }
+.video-settings-overridden { color: var(--apple-primary); font-weight: 600; }
+.video-settings-comparison-action {
+  min-height: 25px;
+  padding: 3px 9px;
+  border: 1px solid var(--apple-primary);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--apple-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.video-settings-comparison-action:hover { background: var(--apple-primary); color: #fff; }
+.video-settings-comparison-action:disabled { opacity: .4; cursor: not-allowed; }
+
+@media (max-width: 580px) {
+  .video-settings-comparison-grid {
+    grid-template-columns: minmax(100px, 1fr) minmax(70px, .8fr) minmax(70px, .8fr);
+  }
+  .video-settings-comparison-action { grid-column: 3; justify-self: end; }
+}
+
 /* ── 螢幕錄影解析度降階警示 (Screen Downscale Warning) ─── */
 .screen-downscale-warning {
   grid-column: 1 / -1;

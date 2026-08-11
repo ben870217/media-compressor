@@ -136,7 +136,29 @@ export function videoConversionOptions(settings, dimensions, bitrate) {
     fit: settings.fit === 'cover' ? 'cover' : 'contain',
     frameRate: settings.fps === 'original' ? undefined : Number(settings.fps),
     ...(settings.keyframeInterval == null ? {} : { keyFrameInterval: settings.keyframeInterval }),
+    ...(settings.bitrateMode == null ? {} : { bitrateMode: settings.bitrateMode }),
   };
+}
+
+export function videoSettingsComparison(source = {}, recommended = {}) {
+  return [
+    ['fps', 'FPS'],
+    ['keyframeInterval', 'Keyframe Interval'],
+    ['bitrateMode', 'Bitrate Mode'],
+    ['audioBitrate', 'Audio Bitrate'],
+  ].map(([key, label]) => ({
+    key,
+    label,
+    sourceValue: source[key] ?? null,
+    recommendedValue: recommended[key] ?? null,
+  }));
+}
+
+export function inferBitrateMode({ averageBitrate, peakBitrate } = {}) {
+  if (!Number.isFinite(averageBitrate) || averageBitrate <= 0 || !Number.isFinite(peakBitrate) || peakBitrate <= 0) {
+    return 'unknown';
+  }
+  return peakBitrate / averageBitrate <= 1.15 ? 'constant' : 'variable';
 }
 
 export function sparseAudioSampleTimestamps(duration) {
