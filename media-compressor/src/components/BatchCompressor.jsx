@@ -1,12 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AudioSampleSink, AudioSampleSource, EncodedPacketSink, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat, VideoSampleSink, VideoSampleSource } from 'mediabunny';
+import { AudioSampleSink, AudioSampleSource, EncodedAudioPacketSource, EncodedPacketSink, Input, Output, BlobSource, BufferTarget, MP4, MATROSKA, WEBM, QTFF, Mp4OutputFormat, VideoSampleSink, VideoSampleSource } from 'mediabunny';
 import { ASPECT_OPTIONS, changedFields, defaultSettings, detectVideoSourceType, effectiveVideoSettings, inferBitrateMode, isAnimatedImage, isAudioBufferSilent, mergedSettings, normalizeAspect, normalizeSampleTimestamp, outputDimensions, sparseAudioSampleTimestamps, videoConversionOptions, videoSettingsComparison } from '../utils/mediaSettings';
 import { sanitizeFilename } from '../utils/sanitizeFilename';
 
 const MAX_FILES = 50;
 const CANCELLED = 'CANCELLED_BY_USER';
+const AAC_ENCODER_CODEC = 'mp4a.40.2';
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const backgroundColor = (value) => value === 'black' ? '#000000' : value === 'white' ? '#ffffff' : value === 'blur' ? 'blur' : value.startsWith('#') ? value : '#ffffff';
+
+async function isAudioEncoderConfigSupported({ sampleRate, numberOfChannels, bitrate, bitrateMode }) {
+  if (typeof AudioEncoder === 'undefined' || typeof AudioEncoder.isConfigSupported !== 'function') return false;
+  try {
+    const support = await AudioEncoder.isConfigSupported({
+      codec: AAC_ENCODER_CODEC,
+      sampleRate,
+      numberOfChannels,
+      bitrate,
+      ...(bitrateMode == null ? {} : { bitrateMode }),
+    });
+    return support.supported === true;
+  } catch {
+    return false;
+  }
+}
+
+function isEncoderFailure(error) {
+  return error?.name === 'EncodingError' || /encoding error/i.test(error?.message || '');
+}
+
+function isVideoEncoderFailure(error) {
+  return isEncoderFailure(error) || /specific encoder configuration.*not supported/i.test(error?.message || '');
+}
 
 async function imageMeta(file) {
   if (await isAnimatedImage(file)) throw new Error('不支援 GIF 或動畫 WebP；請改用靜態 JPEG、PNG 或 WebP。');
@@ -190,7 +215,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     workerRef.current.postMessage({ type: 'START_PRE_COMPRESSION', requestId, file: item.file, targetSizeMB: settings.targetSize, format: settings.format, dimensions, fit: settings.fit, background: backgroundColor(settings.background) });
   });
 
-  const processVideo = async (item, settings, dimensions, attempt) => {
+  const processVideo = async (item, settings, dimensions, attempt, { forceAudioPassthrough = false, forceVideoCodec = null } = {}) => {
     const input = new Input({ source: new BlobSource(item.file), formats: [MP4, QTFF, MATROSKA, WEBM] });
     const target = new BufferTarget();
     const output = new Output({ format: new Mp4OutputFormat(), target });
@@ -202,7 +227,16 @@ export default function BatchCompressor({ type, onCompressComplete }) {
     let outputCancelPromise = null;
     let outputCancelError = null;
     let processingFailure = null;
+    let finalizationFailed = false;
+    let audioProcessingFailed = false;
+    let videoProcessingFailed = false;
+    let retryWithAudioPassthrough = false;
+    let retryWithVideoCodec = null;
     let controller = null;
+    let sourceAudioTrack = null;
+    let sourceAudioCodec = null;
+    let canCopyAudio = false;
+    const outputVideoCodec = forceVideoCodec || settings.format;
     const cancelOutput = () => {
       outputCancelPromise ??= output.cancel().catch((error) => {
         outputCancelError = error;
@@ -210,13 +244,42 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       });
       return outputCancelPromise;
     };
+    const closeSource = async (source, markFailure) => {
+      if (cancelled || stopProcessing) return;
+      try {
+        // mediabunny's close() starts the encoder flush but does not return its promise.
+        source.close();
+        await source._flushOrWaitForOngoingClose(false);
+      } catch (error) {
+        markFailure(error);
+        stopProcessing = true;
+        throw error;
+      }
+    };
     try {
       const videoTrack = await input.getPrimaryVideoTrack();
       if (!videoTrack || !(await videoTrack.canDecode())) throw new Error('此瀏覽器/裝置不支援所選影片編碼。請改用 H.264 / AVC，或降低解析度後重試。');
-      const sourceAudioTrack = settings.stripAudio ? null : await input.getPrimaryAudioTrack();
-      if (sourceAudioTrack && !(await sourceAudioTrack.canDecode())) throw new Error('此影片的音訊編碼無法由目前瀏覽器解碼，請改用支援 AAC 的來源檔或移除音訊。');
+      sourceAudioTrack = settings.stripAudio ? null : await input.getPrimaryAudioTrack();
+      sourceAudioCodec = sourceAudioTrack ? await sourceAudioTrack.getCodec() : null;
+      const audioEncoderSupported = sourceAudioTrack && !forceAudioPassthrough
+        ? await isAudioEncoderConfigSupported({
+          sampleRate: await sourceAudioTrack.getSampleRate(),
+          numberOfChannels: await sourceAudioTrack.getNumberOfChannels(),
+          bitrate: audioRate,
+          bitrateMode: settings.bitrateMode,
+        })
+        : false;
+      canCopyAudio = Boolean(
+        sourceAudioTrack
+        && sourceAudioCodec
+        && output.format.getSupportedAudioCodecs().includes(sourceAudioCodec)
+        && (forceAudioPassthrough || !audioEncoderSupported),
+      );
+      if (sourceAudioTrack && !canCopyAudio && !(await sourceAudioTrack.canDecode())) {
+        throw new Error('此影片的音訊編碼無法由目前瀏覽器解碼或重新編碼，請改用支援 AAC 的來源檔或移除音訊。');
+      }
 
-      const options = videoConversionOptions(settings, dimensions, videoRate);
+      const options = videoConversionOptions({ ...settings, format: outputVideoCodec }, dimensions, videoRate);
       const frameRate = options.frameRate;
       const needsResize = item.meta.width !== dimensions.width || item.meta.height !== dimensions.height;
       const transform = {
@@ -237,7 +300,11 @@ export default function BatchCompressor({ type, onCompressComplete }) {
         rotation,
       });
 
-      const audioSource = sourceAudioTrack ? new AudioSampleSource({ codec: 'aac', bitrate: audioRate, bitrateMode: settings.bitrateMode }) : null;
+      const audioSource = sourceAudioTrack
+        ? canCopyAudio
+          ? new EncodedAudioPacketSource(sourceAudioCodec)
+          : new AudioSampleSource({ codec: 'aac', bitrate: audioRate, bitrateMode: settings.bitrateMode })
+        : null;
       if (audioSource) output.addAudioTrack(audioSource);
 
       controller = {
@@ -272,11 +339,13 @@ export default function BatchCompressor({ type, onCompressComplete }) {
             }
           }
         } catch (error) {
+          if (isVideoEncoderFailure(error)) videoProcessingFailed = true;
           stopProcessing = true;
           throw error;
-        } finally {
-          if (!cancelled && !stopProcessing) videoSource.close();
         }
+        await closeSource(videoSource, (error) => {
+          if (isVideoEncoderFailure(error)) videoProcessingFailed = true;
+        });
       };
       const processAudioSamples = async () => {
         const sink = new AudioSampleSink(sourceAudioTrack);
@@ -293,13 +362,45 @@ export default function BatchCompressor({ type, onCompressComplete }) {
             }
           }
         } catch (error) {
+          audioProcessingFailed = true;
           stopProcessing = true;
           throw error;
-        } finally {
-          if (!cancelled && !stopProcessing) audioSource.close();
         }
+        await closeSource(audioSource, () => {
+          audioProcessingFailed = true;
+        });
       };
-      const processingTasks = [processVideoSamples(), ...(audioSource ? [processAudioSamples()] : [])];
+      const processEncodedAudioPackets = async () => {
+        const sink = new EncodedPacketSink(sourceAudioTrack);
+        const decoderConfig = await sourceAudioTrack.getDecoderConfig();
+        let hasAddedPacket = false;
+        try {
+          for await (const packet of sink.packets()) {
+            if (cancelled || stopProcessing) return;
+            // MP4 muxers require non-negative timestamps. Discard decoder-preroll
+            // packets that end before the output timeline and clamp a packet that
+            // straddles zero, matching the decoded-sample path below.
+            if (packet.timestamp + packet.duration <= 0) continue;
+            const normalizedPacket = packet.timestamp < 0 ? packet.clone({ timestamp: 0 }) : packet;
+            await audioSource.add(
+              normalizedPacket,
+              hasAddedPacket ? undefined : { decoderConfig: decoderConfig ?? undefined },
+            );
+            hasAddedPacket = true;
+          }
+        } catch (error) {
+          audioProcessingFailed = true;
+          stopProcessing = true;
+          throw error;
+        }
+        await closeSource(audioSource, () => {
+          audioProcessingFailed = true;
+        });
+      };
+      const processingTasks = [
+        processVideoSamples(),
+        ...(audioSource ? [canCopyAudio ? processEncodedAudioPackets() : processAudioSamples()] : []),
+      ];
       await Promise.allSettled(processingTasks.map((task) => task.catch(async (error) => {
         processingFailure ??= error;
         stopProcessing = true;
@@ -312,8 +413,19 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       })));
       if (processingFailure) throw processingFailure;
       if (cancelled) throw new Error(CANCELLED);
-      await output.finalize();
-      return new Blob([target.buffer], { type: 'video/mp4' });
+      try {
+        await output.finalize();
+      } catch (error) {
+        finalizationFailed = true;
+        throw error;
+      }
+      return {
+        blob: new Blob([target.buffer], { type: 'video/mp4' }),
+        audioPassthrough: canCopyAudio,
+        audioPassthroughReason: forceAudioPassthrough ? 'failed' : 'unsupported',
+        formatFallback: outputVideoCodec !== settings.format,
+        outputFormat: outputVideoCodec,
+      };
     } catch (error) {
       if (cancelled) {
         if (outputCancelError) throw outputCancelError;
@@ -324,10 +436,36 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       } catch (cleanupError) {
         if (error instanceof Error && error.cause === undefined) error.cause = cleanupError;
       }
-      throw error;
+      if (
+        !cancelled
+        && !cancelCurrent.current
+        && (videoProcessingFailed || (finalizationFailed && isEncoderFailure(error)))
+        && settings.format === 'av1'
+        && !forceVideoCodec
+      ) {
+        retryWithVideoCodec = 'avc';
+      } else if (
+        !cancelled
+        && !cancelCurrent.current
+        && audioProcessingFailed
+        && sourceAudioTrack
+        && sourceAudioCodec
+        && output.format.getSupportedAudioCodecs().includes(sourceAudioCodec)
+        && !canCopyAudio
+      ) {
+        retryWithAudioPassthrough = true;
+      } else {
+        throw error;
+      }
     } finally {
       if (currentVideoOperationRef.current === controller) currentVideoOperationRef.current = null;
       input.dispose();
+    }
+    if (retryWithAudioPassthrough || retryWithVideoCodec) {
+      return processVideo(item, settings, dimensions, attempt, {
+        forceAudioPassthrough: forceAudioPassthrough || retryWithAudioPassthrough,
+        forceVideoCodec: retryWithVideoCodec || forceVideoCodec,
+      });
     }
   };
 
@@ -347,7 +485,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
       const dimensions = outputDimensions({ ...item.meta, ...settings, even: type === 'video' });
       try {
         const processing = type === 'image'
-          ? processImage(item, settings, dimensions).then((response) => response.blob)
+          ? processImage(item, settings, dimensions).then((response) => ({ blob: response.blob, audioPassthrough: false }))
           : processVideo(item, settings, dimensions, item.retryAttempt || 0);
         const cancelled = new Promise((resolve) => { cancelSignalRef.current = () => resolve({ cancelled: true }); });
         const outcome = await Promise.race([
@@ -368,10 +506,10 @@ export default function BatchCompressor({ type, onCompressComplete }) {
         }
         if (outcome.error) throw outcome.error;
         const { result } = outcome;
-        const overTarget = result.size > settings.targetSize * 1024 ** 2;
-        updateItem(item.id, { status: 'success', progress: 100, result: { blob: result, dimensions, overTarget } });
+        const overTarget = result.blob.size > settings.targetSize * 1024 ** 2;
+        updateItem(item.id, { status: 'success', progress: 100, result: { ...result, dimensions, overTarget } });
         if (cancelCurrent.current) setNotice('目前任務已完成，取消未生效；繼續處理下一項。');
-        onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'success', filename: item.file.name, originalSizeMB: item.file.size / 1024 ** 2, compressedSizeMB: result.size / 1024 ** 2, savedMB: (item.file.size - result.size) / 1024 ** 2, savedPercent: ((item.file.size - result.size) / item.file.size) * 100, detail: `${dimensions.width}×${dimensions.height} / ${settings.format}`, batchSettings: base, overrides: item.overrides });
+        onCompressComplete?.({ id: uid(), timestamp: Date.now(), batchId: batchId.current, type, status: 'success', filename: item.file.name, originalSizeMB: item.file.size / 1024 ** 2, compressedSizeMB: result.blob.size / 1024 ** 2, savedMB: (item.file.size - result.blob.size) / 1024 ** 2, savedPercent: ((item.file.size - result.blob.size) / item.file.size) * 100, detail: `${dimensions.width}×${dimensions.height} / ${result.outputFormat || settings.format}`, batchSettings: base, overrides: item.overrides });
         if (type === 'video' && overTarget && !item.retryAttempt && !cancelCurrent.current) {
           const retry = { ...item, id: uid(), status: 'pending', progress: 0, error: '', result: null, retryAttempt: 1, retryOf: item.id };
           setItems((previous) => { const index = previous.findIndex((candidate) => candidate.id === item.id); const next = [...previous]; next.splice(index + 1, 0, retry); itemsRef.current = next; return next; });
@@ -520,7 +658,7 @@ export default function BatchCompressor({ type, onCompressComplete }) {
         <MediaPreview blob={item.file} type={type} label="原始檔案預覽" />
         {item.status === 'processing' && <progress max="100" value={item.progress} />}{item.error && <p className="error">{item.error}</p>}
         {(item.status === 'pending' || item.status === 'failed') && <details><summary>單檔覆寫{changedFields(base, item.overrides).length ? `（${changedFields(base, item.overrides).length} 項）` : ''}</summary><Settings settings={effective(item)} type={type} onChange={(key, value) => override(item, key, value)} overridden={item.overrides} onReset={(key) => resetField(item, key)} /><button className="text-button" onClick={() => resetItem(item)}>重設此檔案所有覆寫</button></details>}
-        {item.result && <div className="result"><span>{item.result.dimensions.width} × {item.result.dimensions.height} · {(item.result.blob.size / 1024 ** 2).toFixed(2)} MB</span>{item.result.overTarget && <span className="warn">{item.retryAttempt ? '超過目標，已達自動重試上限。' : type === 'video' ? '超過目標，已加入自動重試 1/1。' : '超過目標容量。'}</span>}<MediaPreview blob={item.result.blob} type={type} label="壓縮後預覽" /><button onClick={() => download(item)}>下載 / 重新命名</button></div>}
+        {item.result && <div className="result"><span>{item.result.dimensions.width} × {item.result.dimensions.height} · {(item.result.blob.size / 1024 ** 2).toFixed(2)} MB</span>{item.result.audioPassthrough && <span className="warn">{item.result.audioPassthroughReason === 'failed' ? 'AAC 重編碼失敗，已保留原始音訊。' : '瀏覽器不支援 AAC 重編碼，已保留原始音訊。'}</span>}{item.result.formatFallback && <span className="warn">AV1 編碼失敗，已改用 H.264 輸出。</span>}{item.result.overTarget && <span className="warn">{item.retryAttempt ? '超過目標，已達自動重試上限。' : type === 'video' ? '超過目標，已加入自動重試 1/1。' : '超過目標容量。'}</span>}<MediaPreview blob={item.result.blob} type={type} label="壓縮後預覽" /><button onClick={() => download(item)}>下載 / 重新命名</button></div>}
         {!running && item.status !== 'processing' && <div className="reorder"><button onClick={() => reorder(index, -1)} disabled={!index}>↑</button><button onClick={() => reorder(index, 1)} disabled={index === items.length - 1}>↓</button><button onClick={() => setItems((previous) => previous.filter((candidate) => candidate.id !== item.id))}>移除</button></div>}
       </article>)}</div>
     </>}

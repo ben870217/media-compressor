@@ -41,7 +41,7 @@
   - 使用核心純函式接縫 `mediaSettings` 與 `BatchCompressor` 的 `effective(item)` 計算邏輯進行單元測試。測試聚焦於外部行為：當 `sourceType === 'screen'` 時，`effective()` 正確輸出 `keyframeInterval: 5`、`bitrateMode: 'variable'`、`fps: '30'` 與 `audioBitrate: 64000`。
 - **測試範例與命令**:
   - 執行 `docker exec -w /app/media-compressor media-compressor-dev npm run test:unit`。
-  - 執行 `docker exec -w /app/media-compressor media-compressor-dev npm run test:e2e`，驗證螢幕模式比較面板預設收合、來源預覽按需載入，以及 735/580/480 RWD。測試同時覆蓋以公開「移除音訊」選項完成 MOV 到 MP4 的 Chrome/Chromium 轉檔；目前 Alpine Chromium 不支援本案例的 AAC WebCodecs encoder 組合，因此不把該環境誤記為保留音訊已驗收。
+  - 執行 `docker exec -w /app/media-compressor media-compressor-dev npm run test:e2e`，驗證螢幕模式比較面板預設收合、來源預覽按需載入，以及 735/580/480 RWD。測試同時覆蓋移除音訊轉檔、AAC WebCodecs encoder 不可用或實際失敗時直接保留來源 AAC packet，以及 AV1 實際編碼失敗時退回 H.264；支援 AAC encoder 的環境另需驗證 64 kbps 重新編碼結果。
 
 ## Out of Scope
 

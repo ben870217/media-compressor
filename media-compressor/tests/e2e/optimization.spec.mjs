@@ -113,35 +113,102 @@ test('does not leak VideoSamples when converting with an explicit frame rate', a
   expect(resourceErrors).toEqual([]);
 });
 
-test('releases VideoSamples when conversion aborts before encoding audio', async ({ page }) => {
+test('preserves AAC audio when the browser has no AAC encoder', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    const NativeAudioEncoder = window.AudioEncoder;
+    if (!NativeAudioEncoder) return;
+    class ForcedUnsupportedAudioEncoder extends NativeAudioEncoder {}
+    ForcedUnsupportedAudioEncoder.isConfigSupported = async (config) => ({ supported: false, config });
+    window.AudioEncoder = ForcedUnsupportedAudioEncoder;
+  });
+
+  const item = await queueMacMov(page);
+  await page.locator('.batch-settings > .settings-grid select').selectOption('avc');
+  await page.getByRole('button', { name: '處理待處理項目' }).click();
+  await expect(item.locator('.status')).toHaveText('完成', { timeout: 45_000 });
+
+  const compressedPreview = item.locator('.result .media-preview');
+  await compressedPreview.getByRole('button', { name: '顯示壓縮後預覽' }).click();
+  await expect.poll(() => compressedPreview.locator('video').evaluate((video) => video.readyState)).toBeGreaterThan(0);
+});
+
+test('falls back to source AAC when AAC encoding fails after capability detection', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    const NativeAudioEncoder = window.AudioEncoder;
+    if (!NativeAudioEncoder) return;
+    class FailingAudioEncoder extends NativeAudioEncoder {
+      static isConfigSupported(config) {
+        if (config.codec === 'mp4a.40.2') return Promise.resolve({ supported: true, config });
+        return NativeAudioEncoder.isConfigSupported(config);
+      }
+
+      encode() {
+        // Let the sample loop finish; the failure is raised during encoder flush.
+      }
+
+      flush() {
+        throw new Error('Encoding error');
+      }
+    }
+    window.AudioEncoder = FailingAudioEncoder;
+  });
+
+  const item = await queueMacMov(page);
+  await page.locator('.batch-settings > .settings-grid select').selectOption('avc');
+  await page.getByRole('button', { name: '處理待處理項目' }).click();
+  await expect(item.locator('.status')).toHaveText('完成', { timeout: 45_000 });
+  await expect(item.locator('.result')).toContainText('已保留原始音訊');
+});
+
+test('falls back to H.264 when AV1 encoding fails after capability detection', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    const NativeVideoEncoder = window.VideoEncoder;
+    if (!NativeVideoEncoder) return;
+    class FailingAv1VideoEncoder extends NativeVideoEncoder {
+      static isConfigSupported(config) {
+        if (config.codec.startsWith('av01')) return Promise.resolve({ supported: true, config });
+        return NativeVideoEncoder.isConfigSupported(config);
+      }
+
+      configure(config) {
+        this.outputCodec = config.codec;
+        return super.configure(config);
+      }
+
+      encode(frame, options) {
+        if (this.outputCodec.startsWith('av01')) return;
+        return super.encode(frame, options);
+      }
+
+      flush() {
+        if (this.outputCodec.startsWith('av01')) throw new Error('Encoding error');
+        return super.flush();
+      }
+    }
+    window.VideoEncoder = FailingAv1VideoEncoder;
+  });
+
+  const item = await queueMacMov(page);
+  await page.getByRole('button', { name: '處理待處理項目' }).click();
+  await expect(item.locator('.status')).toHaveText('完成', { timeout: 45_000 });
+  await expect(item.locator('.result')).toContainText('已改用 H.264');
+});
+
+test('releases VideoSamples when video encoding is unsupported', async ({ page }) => {
   test.setTimeout(60_000);
   const resourceErrors = captureVideoSampleErrors(page);
   await page.addInitScript(() => {
-    window.AudioEncoder = class ForcedUnsupportedAudioEncoder {
-      static isConfigSupported() {
-        return new Promise((resolve) => {
-          const waitForVideoSample = () => {
-            const progress = document.querySelector('.queue-item progress');
-            if (progress && Number(progress.value) > 0) {
-              window.__videoSampleReady = true;
-              resolve({ supported: false });
-              return;
-            }
-            window.setTimeout(waitForVideoSample, 0);
-          };
-          waitForVideoSample();
-        });
-      }
+    window.VideoEncoder = class ForcedUnsupportedVideoEncoder {
+      static isConfigSupported() { return Promise.resolve({ supported: false }); }
     };
   });
 
   const item = await queueMacMov(page, { sourceType: 'screen' });
   await page.locator('.batch-settings > .settings-grid select').selectOption('avc');
-  const advanced = page.locator('.batch-settings details.advanced-settings');
-  await advanced.locator('summary').click();
-  await advanced.locator('label').filter({ hasText: 'FPS' }).locator('select').selectOption('30');
   await page.getByRole('button', { name: '處理待處理項目' }).click();
-  await expect.poll(() => page.evaluate(() => window.__videoSampleReady === true)).toBe(true);
   await expect(item.locator('.status')).toHaveText('失敗', { timeout: 45_000 });
   await forceGarbageCollection(page);
   expect(resourceErrors).toEqual([]);

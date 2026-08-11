@@ -103,7 +103,7 @@ docker exec -w /app/media-compressor media-compressor-dev
 docker exec -w /app/media-compressor media-compressor-dev npm run build
 ```
 
-`npm run test:e2e` 會由 Playwright 啟動或重用 Vite 開發伺服器；本機 Docker Compose 透過 `PLAYWRIGHT_CHROMIUM_PATH` 使用 image 內的 `/usr/bin/chromium`，CI 則安裝 Playwright 管理的 Chromium。測試 fixture 位於 `media-compressor/tests/fixtures/mac-h264-aac.mov`；若要重新產生 fixture，使用 image 內的 `ffmpeg`，再以 `ffprobe` 檢查 H.264/AAC、320×180、30 FPS 與 48 kHz 立體聲條件。AAC WebCodecs encoder 是否可用仍取決於瀏覽器與作業系統 build；目前 Alpine Chromium 的驗收轉碼案例會透過 UI 移除音訊後確認 MP4 輸出，避免靜默丟失音訊。
+`npm run test:e2e` 會由 Playwright 啟動或重用 Vite 開發伺服器；本機 Docker Compose 透過 `PLAYWRIGHT_CHROMIUM_PATH` 使用 image 內的 `/usr/bin/chromium`，CI 則安裝 Playwright 管理的 Chromium。測試 fixture 位於 `media-compressor/tests/fixtures/mac-h264-aac.mov`；若要重新產生 fixture，使用 image 內的 `ffmpeg`，再以 `ffprobe` 檢查 H.264/AAC、320×180、30 FPS 與 48 kHz 立體聲條件。AAC 與 AV1 WebCodecs encoder 是否可用仍取決於瀏覽器與作業系統 build；若 AAC 無法重新編碼但來源 AAC 可直接封裝，產品會保留原始音訊；若 AV1 實際編碼失敗，產品會退回 H.264。兩種 fallback 都會在結果上提示，不會靜默丟失音訊或改變輸出格式。
 
 ## Pull Request 品質閘門
 

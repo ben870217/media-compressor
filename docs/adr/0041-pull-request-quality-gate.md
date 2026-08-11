@@ -26,4 +26,4 @@
 - 每個 Pull Request 都有一致且可追蹤的驗證結果。
 - CI 會增加瀏覽器安裝與 E2E 執行時間，但能在合併前攔截 UI、MOV 與 RWD 回歸。
 - required check 的名稱必須維持穩定；若 workflow/job 改名，需同步更新 GitHub branch protection／ruleset。
-- MOV 的 required E2E 只保證 H.264/AAC metadata 讀取與移除音訊後的 MP4 流程；AAC 保留音訊轉碼仍屬目標瀏覽器／裝置的相容性驗收，不作為單一 CI runner 的跨環境保證。
+- MOV 的 required E2E 保證 H.264/AAC metadata 讀取、移除音訊後的 MP4 流程、AAC encoder 不可用或實際失敗時保留來源 AAC packet，以及 AV1 實際編碼失敗時退回 H.264；64 kbps AAC 重新編碼仍屬目標瀏覽器／裝置的相容性驗收，不作為單一 CI runner 的跨環境保證。

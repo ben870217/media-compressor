@@ -18,10 +18,10 @@ fixture 是 320×180、30 FPS 的 QuickTime MOV，包含 H.264 影片與 AAC 48 
 ## 已執行的品質檢查
 
 ```text
-npm run test:unit                                  31 passed, 0 failed
+npm run test:unit                                  34 passed, 0 failed
 npm run lint                                      passed
 npm run build                                     passed
-npm run test:e2e                                  5 passed, 0 failed
+npm run test:e2e                                  11 passed, 0 failed
 npm audit --omit=dev                              0 vulnerabilities
 ```
 
@@ -31,11 +31,13 @@ Playwright UI/E2E 覆蓋：
 2. 螢幕錄影參數比較面板預設收合，使用者展開後才顯示內容。
 3. 原始影片預覽預設不建立 `<video>`，點擊後才載入 Blob URL。
 4. 以公開的「移除音訊」選項完成 MOV 到可預覽 MP4 的 Chrome/Chromium 轉檔流程。
-5. 在 735、580、480 px viewport 檢查沒有水平溢位，並確認 480 px 時來源切換器改為直向排列。
+5. 模擬瀏覽器沒有 AAC encoder 時，保留來源 AAC packet 並完成可預覽 MP4 轉檔。
+6. 模擬 AAC 在 capability detection 後實際拋出 `Encoding error`，確認退回來源 AAC packet；模擬 AV1 實際編碼失敗，確認退回 H.264 並顯示提示。
+7. 驗證顯式 FPS、取消、編碼器不支援時的 VideoSample 資源釋放，以及 735、580、480 px viewport 沒有水平溢位。
 
 ## 尚未能宣稱完成的部分
 
-Docker Alpine Chromium 回報目前 AAC `AudioEncoder` 組合不支援（包括 2 聲道／48 kHz 案例）。因此產品保留「不支援時顯示錯誤、不可靜默丟音訊」的行為；本紀錄只把「移除音訊後的 MOV 轉 MP4」列為已驗證，沒有把保留 AAC 音訊的跨環境轉碼誤記為完成。仍需在支援該 AAC encoder 的桌面 Chrome／實際目標裝置上補驗。
+Docker Alpine Chromium 回報目前 AAC `AudioEncoder` 組合不支援（包括 2 聲道／48 kHz 案例）。產品會先偵測設定；若 MP4 可直接容納來源 AAC，便複製 encoded packet、保留音訊並在結果提示「已保留原始音訊」；即使 capability detection 誤判可用、實際編碼失敗，也會走相同 fallback。AV1 實際編碼失敗時則退回 H.264 並提示。仍需在支援 AAC encoder 的桌面 Chrome／實際目標裝置上補驗 64 kbps 音訊重新編碼路徑。
 
 in-app Browser connector 在本次環境沒有可用 browser session，因此沒有把 connector 狀態冒充為 E2E 證據；本紀錄的 UI 證據來自 Docker 內 Playwright Chromium。
 
