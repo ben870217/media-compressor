@@ -10,61 +10,10 @@ permissions:
 
 jobs:
   release:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v4
-
-      - name: Validate release tag and package version
-        id: version
-        shell: pwsh
-        run: |
-          $tag = '${{ github.ref_name }}'
-          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Only stable vX.Y.Z tags are supported: $tag" }
-          $version = (Get-Content media-compressor/package.json -Raw | ConvertFrom-Json).version
-          if ($tag.Substring(1) -ne $version) { throw "Tag $tag does not match package version $version" }
-          "version=$version" >> $env:GITHUB_OUTPUT
-
-      - name: Extract release notes from CHANGELOG
-        shell: pwsh
-        run: |
-          $version = '${{ steps.version.outputs.version }}'
-          $lines = Get-Content CHANGELOG.md
-          $heading = "## [$version] - "
-          $start = -1
-          for ($index = 0; $index -lt $lines.Count; $index++) {
-            if ($lines[$index].StartsWith($heading)) { $start = $index + 1; break }
-          }
-          if ($start -lt 0) { throw "CHANGELOG.md has no release section for $version" }
-          $notes = New-Object System.Collections.Generic.List[string]
-          for ($index = $start; $index -lt $lines.Count; $index++) {
-            if ($lines[$index] -match '^## ') { break }
-            $notes.Add($lines[$index])
-          }
-          if (($notes -join "`n").Trim().Length -eq 0) { throw "CHANGELOG.md release section for $version is empty" }
-          [System.IO.File]::WriteAllLines((Join-Path $PWD 'release-notes.md'), $notes)
-
-      - name: Ensure release does not already exist
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = '${{ github.ref_name }}'
-          $releaseViewOutput = gh release view $tag 2>&1
-          $exitCode = $LASTEXITCODE
-
-          if ($exitCode -eq 0) {
-            throw 'A Release already exists for this tag and must not be overwritten.'
-          }
-
-          $errorText = $releaseViewOutput -join "`n"
-          if ($errorText -notmatch '(?i)(release not found|HTTP 404)') {
-            throw "Could not verify whether a Release exists for $tag. gh output: $errorText"
-          }
-
-          # `gh release view` returns exit code 1 when the tag has no Release yet.
-          # This is expected here; explicitly clear it so pwsh finishes successfully.
-          exit 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -80,80 +29,79 @@ jobs:
           npm run lint
 
       - name: Build versioned PWA archive
-        shell: pwsh
+        working-directory: media-compressor
+        shell: bash
         run: |
-          $version = '${{ steps.version.outputs.version }}'
-          $env:VITE_RELEASE_VERSION = $version
-          $env:VITE_BASE_PATH = "/media-compressor/releases/v$version/"
-          Push-Location media-compressor
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          export VITE_RELEASE_VERSION="$version"
+          export VITE_BASE_PATH="/media-compressor/releases/v${version}/"
           npm run build
-          Pop-Location
-          Compress-Archive -Path media-compressor/dist/* -DestinationPath "MediaCompressor-v$version-PWA.zip"
+          (cd dist && zip -qr "../../MediaCompressor-v${version}-PWA.zip" .)
+          test -s "../MediaCompressor-v${version}-PWA.zip"
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
+      - name: Validate release tag and package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Only stable vX.Y.Z tags are supported: $tag" >&2
+            exit 1
+          fi
+          version="$(node -p "require('./media-compressor/package.json').version")"
+          if [[ "$tag" != "v$version" ]]; then
+            echo "Tag $tag does not match package version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare fixed WebView2 runtime
-        shell: pwsh
+      - name: Extract release notes from CHANGELOG
+        shell: bash
         env:
-          WEBVIEW2_FIXED_RUNTIME_URL: ${{ vars.WEBVIEW2_FIXED_RUNTIME_URL }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:WEBVIEW2_FIXED_RUNTIME_URL)) { throw 'Set WEBVIEW2_FIXED_RUNTIME_URL to a pinned Microsoft fixed-runtime CAB URL.' }
-          New-Item -ItemType Directory -Force -Path media-compressor/src-tauri/WebView2FixedRuntime | Out-Null
-          Invoke-WebRequest -Uri $env:WEBVIEW2_FIXED_RUNTIME_URL -OutFile webview2-fixed-runtime.cab
-          expand webview2-fixed-runtime.cab -F:* media-compressor/src-tauri/WebView2FixedRuntime
+          set -euo pipefail
+          awk -v heading="## [$VERSION] - " '
+            index($0, heading) == 1 { found=1; next }
+            found && /^## / { exit }
+            found { print }
+            END { if (!found) exit 1 }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG.md release section for $VERSION is empty" >&2
+            exit 1
+          fi
 
-      - name: Install NSIS
-        id: nsis
-        shell: pwsh
-        run: |
-          choco install nsis --yes --no-progress --limit-output
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to install NSIS.' }
-          $knownPaths = @(
-            'C:\Program Files (x86)\NSIS\makensis.exe',
-            'C:\Program Files\NSIS\makensis.exe',
-            (Join-Path $env:ChocolateyInstall 'lib\nsis\tools\makensis.exe')
-          )
-          $makensis = $knownPaths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-          if ($null -eq $makensis -and -not [string]::IsNullOrWhiteSpace($env:ChocolateyInstall)) {
-            $makensis = Get-ChildItem -Path (Join-Path $env:ChocolateyInstall 'lib\nsis') -Filter makensis.exe -File -Recurse -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName -First 1
-          }
-          if ([string]::IsNullOrWhiteSpace($makensis)) { throw 'NSIS was installed, but makensis.exe could not be located.' }
-          "executable=$makensis" >> $env:GITHUB_OUTPUT
-
-      - name: Build Tauri setup and portable executables
-        shell: pwsh
-        run: |
-          Push-Location media-compressor
-          npm run tauri:build
-          if ($LASTEXITCODE -ne 0) { throw 'Tauri build failed.' }
-          Pop-Location
-          $version = '${{ steps.version.outputs.version }}'
-          $setup = Get-ChildItem media-compressor/src-tauri/target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
-          if ($null -eq $setup) { throw 'Tauri did not produce an NSIS setup executable.' }
-          Copy-Item $setup.FullName "MediaCompressor-v$version-Setup-x64.exe"
-          New-Item -ItemType Directory -Force -Path portable-package/payload | Out-Null
-          Copy-Item media-compressor/src-tauri/target/release/media-compressor.exe portable-package/payload/MediaCompressor.exe
-          Copy-Item media-compressor/src-tauri/WebView2FixedRuntime portable-package/payload/WebView2FixedRuntime -Recurse
-          Get-ChildItem media-compressor/src-tauri/target/release -Filter WebView2Loader.dll -ErrorAction SilentlyContinue | Copy-Item -Destination portable-package/payload
-          Copy-Item scripts/build-portable-nsis.nsi portable-package/build-portable-nsis.nsi
-          Push-Location portable-package
-          & '${{ steps.nsis.outputs.executable }}' build-portable-nsis.nsi
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to build the portable NSIS executable.' }
-          Pop-Location
-          Copy-Item portable-package/MediaCompressor-Portable.exe "MediaCompressor-v$version-Portable-x64.exe"
-
-      - name: Create SHA-256 checksums
-        shell: pwsh
-        run: |
-          Get-ChildItem -Filter 'MediaCompressor-*.exe' | ForEach-Object { $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(); "$hash  $($_.Name)" | Set-Content "$($_.Name).sha256" -NoNewline }
-
-      - name: Create immutable GitHub Release
-        shell: pwsh
+      - name: Ensure release does not already exist
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create '${{ github.ref_name }}' --title '${{ github.ref_name }}' --notes-file release-notes.md MediaCompressor-*.exe MediaCompressor-*.exe.sha256 MediaCompressor-*-PWA.zip
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if release_output="$(gh release view "$tag" 2>&1)"; then
+            echo "A Release already exists for this tag and must not be overwritten." >&2
+            exit 1
+          else
+            release_status=$?
+          fi
+          if [[ "$release_status" -ne 1 ]] || ! grep -Eqi 'release not found|http 404|not found' <<< "$release_output"; then
+            echo "Could not verify whether a Release exists for $tag." >&2
+            echo "$release_output" >&2
+            exit 1
+          fi
+
+      - name: Create immutable GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            "MediaCompressor-v${VERSION}-PWA.zip"

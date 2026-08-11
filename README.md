@@ -47,7 +47,6 @@ MediaCompressor 是一套以 React、WebCodecs 與 Mediabunny 打造的純前端
 - React 19、Vite 8、Mediabunny 1.50
 - WebCodecs、Web Worker、OffscreenCanvas
 - PWA（vite-plugin-pwa）與 Tailwind CSS v4
-- Tauri 2（Windows 桌面交付）
 - ESLint 10、React Compiler、Docker Compose（Node 26 Alpine 開發環境）
 
 ## 開始開發
@@ -77,19 +76,11 @@ docker exec -w /app/media-compressor media-compressor-dev npm run dev
 docker compose down
 ```
 
-### 使用本機 Node.js
-
-請使用支援 Vite 8 的 Node.js 版本，並以 lockfile 安裝依賴：
-
-```bash
-cd media-compressor
-npm ci
-npm run dev
-```
+所有依賴安裝、lint、測試與 production build 都在上述 Docker 容器中執行，避免本機 Node.js 版本與原生依賴造成差異。
 
 ## 可用指令
 
-以下指令皆在 `media-compressor/` 目錄執行：
+以下指令皆透過 Docker，在 `/app/media-compressor/` 目錄執行：
 
 | 指令 | 用途 |
 | --- | --- |
@@ -132,8 +123,7 @@ docker exec -w /app/media-compressor media-compressor-dev npm run build
 ## 建置與部署
 
 ```bash
-cd media-compressor
-npm run build
+docker exec -w /app/media-compressor media-compressor-dev npm run build
 ```
 
 一般建置輸出至 `media-compressor/dist/`，預設可部署到 GitHub Pages 的 `/media-compressor/` 路徑。推送 `main` 的工作流程會發布這個「預覽版」。
@@ -141,52 +131,33 @@ npm run build
 正式版建置必須注入版本與專屬路徑，例如：
 
 ```bash
-cd media-compressor
-VITE_RELEASE_VERSION=0.2.0 \\
-VITE_BASE_PATH=/media-compressor/releases/v0.2.0/ \\
-npm run build
+docker exec -w /app/media-compressor media-compressor-dev sh -c 'VITE_RELEASE_VERSION=0.2.0 VITE_BASE_PATH=/media-compressor/releases/v0.2.0/ npm run build'
 ```
 
 正式 PWA 的目標路徑是 `/media-compressor/releases/vX.Y.Z/`。每個版本應保留自己的 manifest、service worker 與快取範圍，因此新版不會覆蓋已安裝的舊版；使用者可在「版本與下載」中選擇版本，開啟目標頁後再按「安裝應用程式」。PWA ZIP 僅供部署到內網或自有 HTTPS 主機，不能以 `file://` 或直接解壓縮的方式安裝。
 
-> 目前 `main` 的 Pages workflow 只部署預覽版。版本化 Pages 路徑的保留式部署與 Windows VM 驗收仍是待完成的發布工作；請勿將尚未驗證的產物視為已支援的離線版本。
-
-## Windows 桌面版與離線使用
-
-正式 GitHub Release 的目標資產為 Windows 10／11 x64：
-
-| 檔案 | 用途 |
-| --- | --- |
-| `MediaCompressor-vX.Y.Z-Setup-x64.exe` | Tauri NSIS 安裝版。 |
-| `MediaCompressor-vX.Y.Z-Portable-x64.exe` | Tauri 免安裝版；執行時解壓到使用者暫存目錄，結束後清除。 |
-| 各 `.exe.sha256` | 對應 EXE 的 SHA-256 checksum。 |
-| `MediaCompressor-vX.Y.Z-PWA.zip` | 版本化 PWA 靜態檔，供 HTTPS 網站部署。 |
-
-Setup 與 Portable 使用同一份 React 前端、Tauri 程式和固定版 WebView2 runtime；不需要 Chrome、Node.js、Go 啟動器或本機 localhost 服務。兩者只保留瀏覽器等級的檔案選擇與下載行為，不要求原生檔案系統或 shell 權限。
-
-第一版 EXE 不含 Authenticode 簽章，Windows 可能顯示 SmartScreen 警告。請只從官方 GitHub Release 下載，並比對同一 Release 內的 SHA-256 檔案。PowerShell 範例：
-
-```powershell
-(Get-FileHash .\MediaCompressor-v0.2.0-Setup-x64.exe -Algorithm SHA256).Hash.ToLower()
-Get-Content .\MediaCompressor-v0.2.0-Setup-x64.exe.sha256
-```
-
-兩行顯示的雜湊值必須相同。固定版 WebView2 runtime 的 URL 由 repository variable `WEBVIEW2_FIXED_RUNTIME_URL` 指定；更換 runtime 時必須記錄變更並重新驗證媒體相容性。
+> `main` 的 Pages workflow 部署可持續更新的預覽版；正式 tag workflow 會建置帶有版本專屬路徑的 PWA，並將 PWA ZIP 附加至不可覆寫的 GitHub Release。
 
 ## 版本與發布
 
-版本採用 [Semantic Versioning](https://semver.org/lang/zh-TW/)。`media-compressor/package.json` 是前端與 Git tag 的版本來源，`media-compressor/src-tauri/Cargo.toml` 必須保持相同版本。Git tag 必須與版本完全一致並加上 `v` 前綴，例如 `0.2.0` 對應 `v0.2.0`。
+版本採用 [Semantic Versioning](https://semver.org/lang/zh-TW/)。`media-compressor/package.json` 是前端與 Git tag 的版本來源，`package-lock.json` 必須同步更新。Git tag 必須與版本完全一致並加上 `v` 前綴，例如 `0.2.0` 對應 `v0.2.0`。
 
 變更紀錄寫在根目錄 [`CHANGELOG.md`](CHANGELOG.md)，格式與分類規則見 [`docs/CHANGELOG_FORMAT.md`](docs/CHANGELOG_FORMAT.md)。發布新版本時：
 
-1. 決定下一個 SemVer 版本並更新 `media-compressor/package.json`、`package-lock.json` 與 `src-tauri/Cargo.toml`。
+1. 決定下一個 SemVer 版本並更新 `media-compressor/package.json` 與 `package-lock.json`。
 2. 將 `CHANGELOG.md` 的 `Unreleased` 項目移至新的 `## [X.Y.Z] - YYYY-MM-DD` 段落。
 3. 提交版本與 CHANGELOG 變更並推送至 `main`。
 4. 在相同 commit 建立並推送正式 tag：`git tag vX.Y.Z`、`git push origin vX.Y.Z`。
 
-tag workflow 只接受正式 `vX.Y.Z`，並依序執行 `npm ci`、lint、版本比對與 CHANGELOG 擷取；通過後建置版本化 PWA ZIP、Windows Setup／Portable EXE 與各自的 SHA-256 checksum，並建立不可覆寫的 GitHub Release。預發布 tag（例如 `v0.2.0-beta.1`）不受支援。
+tag workflow 只接受正式 `vX.Y.Z`，並依序執行 `npm ci`、lint、build、版本比對與 CHANGELOG 擷取；通過後只建置 `MediaCompressor-vX.Y.Z-PWA.zip`，並建立不可覆寫的 GitHub Release。預發布 tag（例如 `v0.2.0-beta.1`）不受支援。
 
-發布前請確認 repository variable `WEBVIEW2_FIXED_RUNTIME_URL` 指向可追溯的 Microsoft 固定版 runtime CAB，並在 Windows 10／11 x64 的離線環境驗證安裝版、可攜版及 JPEG、PNG、WebP、H.264/AAC MP4 壓縮。完整待驗收項目見 [`docs/PENDING_IMPLEMENTATION_SPEC.md`](docs/PENDING_IMPLEMENTATION_SPEC.md)。
+「版本與下載」畫面只讀取 `media-compressor/public/releases.json` 中的正式版本，欄位為 `version`、`publishedAt`、`summary`、`pwaInstallUrl`、`pwaZipUrl` 與 `releaseNotesUrl`。發布前請在 Docker 容器中依序執行：
+
+```bash
+docker exec -w /app/media-compressor media-compressor-dev npm ci
+docker exec -w /app/media-compressor media-compressor-dev npm run lint
+docker exec -w /app/media-compressor media-compressor-dev npm run build
+```
 
 ## 隱私與資料保存
 

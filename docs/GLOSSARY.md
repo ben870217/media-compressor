@@ -44,18 +44,6 @@ GitHub Release 頁面顯示的版本變更說明。本專案由 tag 對應的 `C
 
 帶有 beta 或 rc 等識別碼的非正式版本，例如 `0.2.0-beta.1`。初期不由 Release workflow 處理。
 
-## 可攜離線套件
-
-附加於 GitHub Release 的 `MediaCompressor-Portable.exe`。它由同一份 Tauri 應用程式封裝而成，執行時暫存解壓並啟動，使用者無須安裝應用程式。
-
-## 固定版 WebView2 runtime
-
-與 Windows Tauri 應用程式一同散布的特定 WebView2 版本。它不依賴系統既有 runtime 或網路下載，適用於離線與 air-gapped 環境，但會明顯增加發行檔大小。
-
-## NSIS 安裝版
-
-以 NSIS 產生的 Windows 安裝程式 EXE。本專案以 `MediaCompressor-Setup.exe` 發行，由同一份 Tauri 應用程式建立，並與可攜離線套件功能一致。
-
 ## 版本化 PWA
 
 由正式 `vX.Y.Z` tag 發行、位於專屬 GitHub Pages 路徑的 PWA。其 manifest、service worker 與快取範圍只對應該版本，因此不會隨 `main` 的線上預覽版更新。
@@ -67,14 +55,6 @@ GitHub Release 頁面顯示的版本變更說明。本專案由 tag 對應的 `C
 ## 語意化 UI 元件
 
 以用途命名且可重用的介面元件，例如按鈕、欄位、卡片與頁面版面。它們封裝 Tailwind utilities、狀態和 RWD 規則，避免各功能元件重複拼接樣式。
-
-## Windows 首發支援範圍
-
-本專案第一版桌面發行僅支援 Windows 10／11 x64；不支援 Windows 7／8 或 ARM64。
-
-## 媒體相容性基線
-
-在指定平台上承諾必須通過的媒體格式組合。本專案的 Windows Tauri 首發基線為 JPEG、PNG、WebP，以及 H.264/AAC MP4；其他 codec 依 WebView2 與裝置能力而定。
 
 ## PWA 版本並存
 
@@ -90,11 +70,11 @@ PWA 為離線啟動預先保存的程式資產，例如 HTML、JS、CSS、Worker
 
 ## 發行平台
 
-本專案唯一使用 GitHub：GitHub Release 提供固定版本資產與 checksum，GitHub Pages 提供網站、版本列表與下載入口。
+本專案唯一使用 GitHub：GitHub Release 提供固定版本的 PWA ZIP 與 Release notes，GitHub Pages 提供網站、版本列表與 PWA 安裝入口。
 
 ## 發行目錄
 
-由 Release workflow 產生的靜態 `releases.json`。GitHub Pages 以它顯示版本與固定下載 URL，不在瀏覽器端呼叫 GitHub API。
+由 Release workflow 維護的靜態 `releases.json`。GitHub Pages 以它顯示正式版本、PWA 安裝入口、PWA ZIP 與 Release notes 固定 URL，不在瀏覽器端呼叫 GitHub API。
 
 ## 開啟並安裝 PWA
 
@@ -106,7 +86,7 @@ PWA 為離線啟動預先保存的程式資產，例如 HTML、JS、CSS、Worker
 
 ## 版本與下載
 
-GitHub Pages 的獨立畫面。它以發行目錄呈現正式版本與其 EXE、PWA、checksum、Release notes 和指定版本 PWA 安裝入口。
+GitHub Pages 的獨立畫面。它以發行目錄呈現正式版本的 PWA ZIP、Release notes 和指定版本 PWA 安裝入口。
 
 ## 正式發行目錄
 

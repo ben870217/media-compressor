@@ -6,11 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:desktop": "vite build --base ./",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:build": "tauri build"
+    "preview": "vite preview"
   },
   "dependencies": {
     "mediabunny": "^1.50.7",
@@ -22,7 +19,6 @@
     "@eslint/js": "^10.0.1",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/vite": "^4.3.2",
-    "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",

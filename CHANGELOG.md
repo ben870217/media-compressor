@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- 正式 GitHub Release 改為只提供版本化 PWA ZIP，移除 Windows 桌面發行流程與相關下載連結。
+
 ## [0.2.0] - 2026-07-12
 
 ### Added
