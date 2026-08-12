@@ -4,14 +4,23 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-12
+
 ### Added
-- Pull Request quality gate，合併前自動執行 unit、lint、build 與 Playwright UI/E2E 驗收。
+- 依據解析度、長寬比與影格率自動判定電腦螢幕錄影或手機錄影，並提供全域與單檔來源類型覆寫。
+- 新增螢幕錄影來源與建議參數比較面板，顯示 FPS、Keyframe Interval、Bitrate Mode 與 Audio Bitrate。
+- 針對電腦螢幕錄影加入原始解析度、30 FPS、5 秒 GOP、VBR 與 64 kbps 音訊的品質保留優化，以及疑似靜音提示。
+- 新增 Docker、Playwright UI/E2E 驗收與 Pull Request quality gate，涵蓋 MOV、轉碼、取消、資源釋放與 RWD 流程。
 
 ### Fixed
+- AAC encoder 不可用或實際重編碼失敗時，若輸出容器可直接封裝來源 AAC，保留原始音訊並顯示提示，避免靜默丟失音訊。
+- AV1 encoder 實際失敗或設定不受支援時，自動退回 H.264 輸出並顯示提示。
 - 影片與音訊並行轉碼其中一路失敗時，先收束背景 sample 處理再取消輸出，避免 `VideoSample` 未關閉。
 - 修正部分影片或音訊解碼器產生負時間戳時，WebCodecs 拒絕影格或音訊而導致轉碼失敗。
 
 ### Changed
+- 影片預設輸出編碼改為 AV1，並保留 H.264、H.265、VP9 與 AV1 選項。
+- 原始與壓縮後媒體預覽改為按需載入，螢幕錄影參數比較面板預設收合。
 - 正式 GitHub Release 改為只提供版本化 PWA ZIP，移除 Windows 桌面發行流程與相關下載連結。
 
 ## [0.2.0] - 2026-07-12
