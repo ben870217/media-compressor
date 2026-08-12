@@ -193,3 +193,196 @@ code {
 .media-preview button { margin-bottom: 8px; }
 .media-preview video, .media-preview img { display: block; width: min(100%, 480px); max-height: 320px; object-fit: contain; border: 1px solid var(--apple-hairline); border-radius: 8px; background: #000; }
 @media (max-width: 600px) { .queue-actions span { width: 100%; }.queue-actions button { flex: 1; }.batch-workspace { width: 100%; } }
+
+/* ── 影片來源類型全域切換器 (Source-type Segmented Control) ─── */
+.source-type-switcher {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  background: var(--apple-report-bg);
+  border: 1px solid var(--apple-hairline);
+  border-radius: 14px;
+}
+.source-type-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--apple-ink-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.source-type-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--apple-hairline);
+  background: var(--apple-canvas);
+  color: var(--apple-ink);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.source-chip:hover {
+  border-color: var(--apple-primary);
+  color: var(--apple-primary);
+}
+.source-chip.active {
+  border-color: var(--apple-primary);
+  background: var(--apple-primary);
+  color: #fff;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--apple-primary), transparent 55%);
+}
+.source-chip:active { transform: scale(0.96); }
+.source-type-hint {
+  font-size: 12px;
+  color: var(--apple-ink-secondary);
+  text-align: center;
+  max-width: 420px;
+}
+
+/* ── 單檔偵測標籤列 (Per-item Detection Badge Row) ─── */
+.source-type-badge-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 4px;
+}
+.source-type-item-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.source-type-item-badge.mobile {
+  background: rgba(0, 102, 204, 0.10);
+  color: var(--apple-primary);
+}
+.source-type-item-badge.screen {
+  background: rgba(52, 199, 89, 0.12);
+  color: #1a7a3c;
+}
+@media (prefers-color-scheme: dark) {
+  .source-type-item-badge.screen { color: #4cd964; background: rgba(76, 217, 100, 0.15); }
+}
+:root[data-theme="dark"] .source-type-item-badge.screen { color: #4cd964; background: rgba(76, 217, 100, 0.15); }
+.source-type-override-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  min-height: 26px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--apple-primary);
+  background: transparent;
+  color: var(--apple-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.source-type-override-btn:hover {
+  background: var(--apple-primary);
+  color: #fff;
+}
+.source-type-override-btn.secondary {
+  border-color: var(--apple-ink-secondary);
+  color: var(--apple-ink-secondary);
+}
+.source-type-override-btn.secondary:hover {
+  background: var(--apple-ink-secondary);
+  color: var(--apple-canvas);
+}
+
+/* ── 來源與建議編碼參數對比 (Source vs Recommended Encoding) ─── */
+.video-settings-comparison-details { margin: 10px 0 4px; }
+.video-settings-comparison-details > summary { cursor: pointer; color: var(--apple-primary); font-size: 13px; }
+.video-settings-comparison-details[open] > summary { margin-bottom: 6px; }
+.video-settings-comparison {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--apple-hairline);
+  border-radius: var(--apple-radius-sm);
+  background: var(--apple-report-bg);
+  text-align: left;
+  font-size: 12px;
+}
+.video-settings-comparison-grid {
+  display: grid;
+  grid-template-columns: minmax(112px, 1.1fr) minmax(78px, .8fr) minmax(78px, .8fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  padding: 3px 4px;
+  color: var(--apple-ink-secondary);
+}
+.video-settings-comparison-header {
+  min-height: 24px;
+  border-bottom: 1px solid var(--apple-hairline);
+  color: var(--apple-ink-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.video-settings-comparison-label { color: var(--apple-ink); font-weight: 600; }
+.video-settings-overridden { color: var(--apple-primary); font-weight: 600; }
+.video-settings-comparison-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 3px 9px;
+  border: 1px solid var(--apple-primary);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--apple-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: transform .15s ease, background-color .15s ease, color .15s ease;
+}
+.video-settings-comparison-action:hover { background: var(--apple-primary); color: var(--apple-chip-active-color); }
+.video-settings-comparison-action:active { transform: scale(.95); }
+.video-settings-comparison-action:disabled { opacity: .4; cursor: not-allowed; }
+
+@media (max-width: 580px) {
+  .video-settings-comparison-grid {
+    grid-template-columns: minmax(100px, 1fr) minmax(70px, .8fr) minmax(70px, .8fr);
+  }
+  .video-settings-comparison-action { grid-column: 3; justify-self: end; }
+  .source-type-chips { flex-direction: column; width: 100%; }
+  .source-chip { justify-content: center; width: 100%; }
+}
+
+/* ── 螢幕錄影解析度降階警示 (Screen Downscale Warning) ─── */
+.screen-downscale-warning {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(183, 121, 3, 0.10);
+  border: 1px solid rgba(183, 121, 3, 0.30);
+  border-radius: 8px;
+  color: #8a5c00;
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  .screen-downscale-warning { color: #ffc94d; background: rgba(255, 200, 0, 0.10); border-color: rgba(255, 200, 0, 0.25); }
+}
+:root[data-theme="dark"] .screen-downscale-warning { color: #ffc94d; background: rgba(255, 200, 0, 0.10); border-color: rgba(255, 200, 0, 0.25); }

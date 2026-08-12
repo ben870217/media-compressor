@@ -99,6 +99,7 @@ export default function App() {
           --apple-chip-bg: #ffffff;
           --apple-chip-active-bg: #0066cc;
           --apple-chip-active-color: #ffffff;
+          --apple-radius-sm: 8px;
           --apple-guide-caption-bg: #f5f5f7;
           --apple-download-panel-bg: rgba(49, 162, 76, 0.06);
 

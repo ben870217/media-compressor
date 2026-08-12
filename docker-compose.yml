@@ -1,8 +1,9 @@
-version: '3.8'
-
 services:
   web:
-    image: node:26-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: media-compressor-dev:local
     container_name: media-compressor-dev
     working_dir: /app
     volumes:
@@ -11,6 +12,7 @@ services:
       - "5173:5173"
     environment:
       - NODE_ENV=development
+      - PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium
     # 保持容器在背景運行而不自動啟動任何服務，等待使用者手動進入
     command: tail -f /dev/null
     restart: always
